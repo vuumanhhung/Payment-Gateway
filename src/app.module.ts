@@ -10,6 +10,7 @@ import { BotModule } from './bots/bots.module';
 import { queueUIMiddleware } from './shards/middlewares/queues.middleware';
 import { CaptchaSolverModule } from './captcha-solver/captcha-solver.module';
 import { ProxyModule } from './proxy/proxy.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -27,6 +28,12 @@ import { ProxyModule } from './proxy/proxy.module';
         REDIS_PORT: Joi.number().required(),
         SERVICE_DOMAIN: Joi.string().domain().optional(),
         DISABLE_SYNC_REDIS: Joi.string().optional(),
+        GATEWAY_AUTO_CRON: Joi.string().valid('true', 'false').default('false'),
+        GATEWAY_PRELOGIN: Joi.string().valid('true', 'false').default('true'),
+        PAYMENT_CHECK_TIMEOUT_SEC: Joi.number().min(1).max(300).default(30),
+        PAYMENT_CHECK_INTERVAL_SEC: Joi.number().min(1).max(30).default(15),
+        PAYMENT_CHECK_MAX_ATTEMPTS: Joi.number().min(1).max(10).default(2),
+        ADMIN_DATA_PATH: Joi.string().optional(),
       }),
     }),
     PaymentConfigModule,
@@ -35,6 +42,7 @@ import { ProxyModule } from './proxy/proxy.module';
     BotModule,
     CaptchaSolverModule,
     ProxyModule,
+    AdminModule,
   ],
   providers: [],
 })

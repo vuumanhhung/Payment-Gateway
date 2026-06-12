@@ -13,7 +13,9 @@ import { ProxyConfig } from '../proxy/proxy.interfaces';
 
 @Injectable()
 export abstract class Gate {
-  private isCronRunning = true;
+  private isCronRunning = process.env.GATEWAY_AUTO_CRON === 'true';
+  private isCronLoopStarted = false;
+  private isDisposed = false;
   private logger = new Logger(Gate.name);
   protected proxy: ProxyConfig;
   constructor(
@@ -22,7 +24,9 @@ export abstract class Gate {
     protected readonly captchaSolver: CaptchaSolverService,
     protected readonly proxyService: ProxyService,
   ) {
-    this.cron();
+    if (this.isCronRunning) {
+      void this.cron();
+    }
   }
 
   abstract getHistory(): Promise<Payment[]>;
@@ -30,15 +34,36 @@ export abstract class Gate {
     return this.config.name;
   }
 
+  getConfig() {
+    return this.config;
+  }
+
   async getProxyAgent() {
     const httpsAgent = await this.proxyService.getProxyAgent(this.config.proxy);
     return httpsAgent;
   }
-  async getHistoryAndPublish() {
+
+  protected async prepareProxy() {
     this.proxy = null;
     if (this.config.proxy && this.config.proxy.length > 0) {
       this.proxy = await this.proxyService.getProxy(this.config.proxy);
     }
+  }
+
+  protected async prepareSession(): Promise<void> {}
+
+  async warmUp() {
+    await this.prepareProxy();
+    await this.prepareSession();
+  }
+
+  async scanOnce() {
+    await this.prepareProxy();
+    return this.getHistory();
+  }
+
+  async getHistoryAndPublish() {
+    await this.prepareProxy();
     const payments = await this.getHistory();
     this.eventEmitter.emit(PAYMENT_HISTORY_UPDATED, payments);
     this.logger.log(
@@ -48,6 +73,7 @@ export abstract class Gate {
         payments: payments.length,
       }),
     );
+    return payments;
   }
 
   private errorStreak = 0;
@@ -74,7 +100,10 @@ export abstract class Gate {
     }
   }
   async cron() {
-    while (true) {
+    if (this.isCronLoopStarted) return;
+    this.isCronLoopStarted = true;
+
+    while (!this.isDisposed) {
       if (!this.isCronRunning) {
         await sleep(5000);
         continue;
@@ -99,7 +128,17 @@ export abstract class Gate {
   stopCron() {
     this.isCronRunning = false;
   }
+
+  destroy() {
+    this.isDisposed = true;
+    this.stopCron();
+  }
+
   startCron() {
+    if (this.isDisposed) return;
     this.isCronRunning = true;
+    if (!this.isCronLoopStarted) {
+      void this.cron();
+    }
   }
 }

@@ -43,6 +43,13 @@ export class TPBankService extends Gate {
   private deviceId: string;
 
   private clearAccessTokenTimeout: NodeJS.Timeout | null = null;
+
+  protected async prepareSession() {
+    if (!this.accessToken) {
+      await this.login();
+    }
+  }
+
   getAgent() {
     if (this.proxy != null) {
       if (this.proxy.username && this.proxy.username.length > 0) {

@@ -20,6 +20,12 @@ export class VCBBankService extends Gate {
   private mobileId: string | null = null;
   private clientId: string | null = null;
 
+  protected async prepareSession() {
+    if (!this.sessionId) {
+      await this.login();
+    }
+  }
+
   getAgent() {
     if (this.proxy != null) {
       if (this.proxy.username && this.proxy.username.length > 0) {

@@ -66,6 +66,12 @@ export class ACBBankService extends Gate {
   private dse_processorId: string | undefined;
   private user_agent: string | undefined;
 
+  protected async prepareSession() {
+    if (!this.dse_sessionId) {
+      await this.login();
+    }
+  }
+
   getBrowserDataDir() {
     return path.join(process.cwd(), '.browser-data', `acb-${this.config.name}`);
   }

@@ -48,6 +48,12 @@ export class MBBankService extends Gate {
   private sessionId: string | null | undefined;
   private deviceId: string = '';
 
+  protected async prepareSession() {
+    if (!this.sessionId) {
+      await this.login();
+    }
+  }
+
   getAgent() {
     if (this.proxy != null) {
       if (this.proxy.username && this.proxy.username.length > 0) {

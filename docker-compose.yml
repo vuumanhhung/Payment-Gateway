@@ -10,6 +10,7 @@ services:
     volumes:
       - ./config/config.yml:/app/config/config.yml
       - ./.browser-data:/app/.browser-data
+      - ./.admin-data:/app/.admin-data
     stdin_open: true
     tty: true
     ports:
@@ -24,6 +25,11 @@ services:
       - CAPTCHA_API_BASE_URL=http://captcha-resolver:1234
       - ACB_MANUAL_LOGIN=${ACB_MANUAL_LOGIN:-false}
       - ACB_SAFEKEY_CONSOLE=${ACB_SAFEKEY_CONSOLE:-false}
+      - GATEWAY_AUTO_CRON=${GATEWAY_AUTO_CRON:-false}
+      - GATEWAY_PRELOGIN=${GATEWAY_PRELOGIN:-true}
+      - PAYMENT_CHECK_TIMEOUT_SEC=${PAYMENT_CHECK_TIMEOUT_SEC:-30}
+      - PAYMENT_CHECK_INTERVAL_SEC=${PAYMENT_CHECK_INTERVAL_SEC:-15}
+      - PAYMENT_CHECK_MAX_ATTEMPTS=${PAYMENT_CHECK_MAX_ATTEMPTS:-2}
   redis:
     image: redis:6.2-alpine
     volumes:

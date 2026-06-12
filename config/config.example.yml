@@ -45,6 +45,7 @@ proxies:
 gateways:
   tp_bank_1:
     type: 'TPBANK'
+    enabled: true
     password: 'MAT_KHAU_DANG_NHAP'
     account: 'SO_TAI_KHOAN'
     login_id: 'TEN_DANG_NHAP'
@@ -55,15 +56,21 @@ gateways:
     get_transaction_count_limit: 10
   mb_bank_1:
     type: 'MBBANK'
+    enabled: true
     password: 'MAT_KHAU_DANG_NHAP'
     account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN KHONG DAU'
+    bank_id: '970422'
     login_id: 'TEN_DANG_NHAP'
     repeat_interval_in_sec: 10
     proxy: 'proxy_1'
   abc_bank_1:
     type: 'ACBBANK'
+    enabled: true
     password: 'MAT_KHAU_DANG_NHAP'
     account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN KHONG DAU'
+    bank_id: '970416'
     login_id: 'TEN_DANG_NHAP'
     repeat_interval_in_sec: 10
   tron_usdt_1:

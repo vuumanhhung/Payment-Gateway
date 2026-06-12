@@ -18,6 +18,8 @@ FROM base
 COPY --from=prod-deps /app/node_modules /app/node_modules
 RUN npx playwright install --with-deps chromium
 COPY --from=build /app/dist /app/dist
+COPY --from=build /app/public /app/public
+COPY --from=build /app/admin-ui /app/admin-ui
 CMD [ "node", "./dist/src/main.js" ]
 
 # docker build -t registry.gitlab.com/nhayhoc/payment-service:acb-test . && docker push registry.gitlab.com/nhayhoc/payment-service:acb-test

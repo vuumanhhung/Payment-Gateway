@@ -24,6 +24,12 @@ Cảm ơn tất cả mọi người đã quan tâm và đồng hành cùng dự 
 
 - Không giới hạn số lượng giao dịch.
 
+- Trang thanh toán VietQR tại `http://localhost:<PORT>`.
+
+- Chỉ lấy lịch sử ngân hàng khi người dùng bấm "Tôi đã chuyển tiền".
+
+- Admin dashboard tại secret URL được sinh tự động khi chạy lần đầu.
+
 - Cài đặt đơn giản: sửa file config, chạy lệnh docker-compose up.
 
 - Source có khả năng thêm các cổng thanh toán tuỳ chỉnh dễ dàng.
@@ -96,7 +102,7 @@ services:
       - CAPTCHA_API_BASE_URL=https://bank-captcha.payment.com.vn
       # If want self-hosted captcha server, edit CAPTCHA_API_BASE_URL to your service
       # CAPTCHA_API_BASE_URL to http://captcha-resolver:1234
-      
+
       # If need config for webhook telegram, where DOMAIN Telegram will make HTTP Post
       # SERVICE_DOMAIN=
   redis:
@@ -120,10 +126,10 @@ webhooks:
   # Hướng dẫn cài webhook ở phía dưới
 gateways:
   mb_bank_1:
-    type: "MBBANK"
-    password: "bank password" 
-    account: "stk nhan tien"
-    login_id: "ten dang nhap bank"
+    type: 'MBBANK'
+    password: 'bank password'
+    account: 'stk nhan tien'
+    login_id: 'ten dang nhap bank'
     repeat_interval_in_sec: 20
   # vcb_bank_1:
   #   type: 'VCBBANK'
@@ -133,27 +139,96 @@ gateways:
   #   device_id: 'huong dan lay phia duoi'
   #   repeat_interval_in_sec: 20
   #   proxy: 'proxy_1'
-
-
 ```
 
 Giải thích:
 
-| Field                               | Description                                                                                                                                                                                                                   |
-|-------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `gateways`                          |                                                                                                                                                                                                                               |
-| &nbsp;&nbsp;`mb_bank_1`             | Tên gateway, đặt tuỳ ý.                                                                                                                                                                                                       |
-| &nbsp;&nbsp;`type`                  | `VCBBANK` \| `MBBANK` \| `ACBBANK`  \| `TPBANK` \| `TRON_USDT_BLOCKCHAIN`  \| `BEP20_USDT_BLOCKCHAIN`.                                                                                                                                                    |
-| &nbsp;&nbsp;`password`              | Pass login bank. Nếu dùng bep20 usdt thì điền api token bscscan.                                                                                                                                           |
-| &nbsp;&nbsp;`account`               | STK nhận tiền hoặc địa chỉ ví tron.                                                                                                                                                                                            |
-| &nbsp;&nbsp;`login_id`              | User đăng nhập bank.                                                                                                                                                                                                           |
-| &nbsp;&nbsp;`repeat_interval_in_sec`| Thời gian polling lịch sử, đơn vị giây.                                                                                                                                                                                        |
-| &nbsp;&nbsp;`device_id`             | ID browser mà bạn đã từng login thành công. Việc này giúp hạn chế yêu cầu nhập lại OTP hoặc thực hiện xác thực khuôn mặt khi payment-service login.                                                                            |
-| &nbsp;&nbsp;`proxy`                 | Tên proxy (nếu có).                                                                                                                                                                                                            |
-| &nbsp;&nbsp;`get_transaction_count_limit` | (Mặc định 100) Giới hạn số lượng giao dịch khi call api bank (Bank support: TP Bank, VCB).                                                                                                                                    |
-| &nbsp;&nbsp;`get_transaction_day_limit`  | (Mặc định 14) Số ngày tính từ hiện tại về trước. (Bank support: VCB, TPBank, ACB, MB Bank). Ví dụ hôm nay là 30/7, get_transaction_day_limit=14 => lấy giao dịch từ 16/7 tới 30/7.                                          |
+| Field                                     | Description                                                                                                                                                                        |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gateways`                                |                                                                                                                                                                                    |
+| &nbsp;&nbsp;`mb_bank_1`                   | Tên gateway, đặt tuỳ ý.                                                                                                                                                            |
+| &nbsp;&nbsp;`type`                        | `VCBBANK` \| `MBBANK` \| `ACBBANK` \| `TPBANK` \| `TRON_USDT_BLOCKCHAIN` \| `BEP20_USDT_BLOCKCHAIN`.                                                                               |
+| &nbsp;&nbsp;`password`                    | Pass login bank. Nếu dùng bep20 usdt thì điền api token bscscan.                                                                                                                   |
+| &nbsp;&nbsp;`account`                     | STK nhận tiền hoặc địa chỉ ví tron.                                                                                                                                                |
+| &nbsp;&nbsp;`account_name`                | Tên chủ tài khoản không dấu dùng để hiển thị trên trang thanh toán và ảnh VietQR.                                                                                                  |
+| &nbsp;&nbsp;`bank_id`                     | Mã BIN ngân hàng dùng để tạo VietQR Quick Link. Ví dụ MB Bank là `970422`, ACB là `970416`.                                                                                        |
+| &nbsp;&nbsp;`login_id`                    | User đăng nhập bank.                                                                                                                                                               |
+| &nbsp;&nbsp;`repeat_interval_in_sec`      | Thời gian polling lịch sử, đơn vị giây.                                                                                                                                            |
+| &nbsp;&nbsp;`device_id`                   | ID browser mà bạn đã từng login thành công. Việc này giúp hạn chế yêu cầu nhập lại OTP hoặc thực hiện xác thực khuôn mặt khi payment-service login.                                |
+| &nbsp;&nbsp;`proxy`                       | Tên proxy (nếu có).                                                                                                                                                                |
+| &nbsp;&nbsp;`get_transaction_count_limit` | (Mặc định 100) Giới hạn số lượng giao dịch khi call api bank (Bank support: TP Bank, VCB).                                                                                         |
+| &nbsp;&nbsp;`get_transaction_day_limit`   | (Mặc định 14) Số ngày tính từ hiện tại về trước. (Bank support: VCB, TPBank, ACB, MB Bank). Ví dụ hôm nay là 30/7, get_transaction_day_limit=14 => lấy giao dịch từ 16/7 tới 30/7. |
 
 ### Bước 5: Chạy lệnh `docker-compose up -d`
+
+## Trang thanh toán VietQR
+
+Mặc định service không còn tự động polling lịch sử ngân hàng. Truy cập:
+
+```text
+http://localhost:3001
+```
+
+Luồng thanh toán:
+
+1. Nhập số tiền và chọn tài khoản nhận.
+2. Service sinh nội dung chuyển khoản duy nhất và tạo ảnh `qr_only` bằng VietQR Quick Link.
+3. Người dùng quét QR và chuyển đúng số tiền, đúng nội dung.
+4. Khi bấm **Tôi đã chuyển tiền**, service mới lấy lịch sử của gateway đã chọn.
+5. Giao dịch chỉ thành công khi khớp tài khoản nhận, số tiền và nội dung chuyển khoản.
+
+Cấu hình gateway dùng cho QR:
+
+```yml
+gateways:
+  mb_bank_1:
+    type: 'MBBANK'
+    password: 'MAT_KHAU_DANG_NHAP'
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN KHONG DAU'
+    bank_id: '970422'
+    login_id: 'TEN_DANG_NHAP'
+    repeat_interval_in_sec: 10
+```
+
+Cấu hình thời gian đối chiếu trong `.env`:
+
+```dotenv
+GATEWAY_AUTO_CRON=false
+GATEWAY_PRELOGIN=true
+PAYMENT_CHECK_TIMEOUT_SEC=30
+PAYMENT_CHECK_INTERVAL_SEC=15
+PAYMENT_CHECK_MAX_ATTEMPTS=2
+```
+
+`PAYMENT_CHECK_TIMEOUT_SEC` là tổng thời gian tìm giao dịch sau khi người dùng
+bấm xác nhận. `PAYMENT_CHECK_INTERVAL_SEC` là khoảng nghỉ giữa hai lần kiểm tra.
+`PAYMENT_CHECK_MAX_ATTEMPTS` giới hạn tổng số lượt lấy lịch sử giao dịch.
+`GATEWAY_PRELOGIN=true` đăng nhập sẵn tuần tự vào các ngân hàng khi service khởi
+động nhưng chưa lấy lịch sử giao dịch.
+Đặt `GATEWAY_AUTO_CRON=true` chỉ khi muốn bật lại cơ chế polling cũ.
+
+## Admin dashboard
+
+Lần chạy đầu, service tự tạo URL gồm 24 ký tự chữ/số và mật khẩu quản trị. Hai
+giá trị này được in trên console. Hash mật khẩu và session secret được lưu tại:
+
+```text
+.admin-data/admin.json
+```
+
+File này đã được ignore khỏi Git. Mật khẩu chỉ hiện một lần; nếu quên, xóa
+`.admin-data/admin.json` rồi khởi động lại service để tạo bộ credential mới.
+
+Dashboard hỗ trợ:
+
+- Xem trạng thái đăng nhập của ACB, MB Bank, TPBank và Vietcombank.
+- Bật hoặc tắt từng gateway mà không cần sửa YAML thủ công.
+- Thêm tài khoản ngân hàng và lưu trực tiếp vào `config/config.yml`.
+- Xem, lọc và tìm kiếm lịch sử giao dịch đã được hệ thống ghi nhận.
+
+API admin dùng signed `HttpOnly` session cookie và không trả mật khẩu hoặc tên
+đăng nhập ngân hàng nguyên bản về trình duyệt.
 
 ### NOTE
 
@@ -161,11 +236,11 @@ Giải thích:
 - Vào cài đặt ngân hàng tương ứng, tìm **tắt 2fa**.
 - TP Bank, VCB yêu cầu phải có `device_id`, đọc mục hướng dẫn lấy device_id để biết thêm chi tiết.
 
-| Bank Name | LOGIN URL                                                      |
-|-----------|----------------------------------------------------------|
-| MB Bank   | [https://online.mbbank.com.vn/pl/login](https://online.mbbank.com.vn/pl/login) |
-| ACB       | [https://acb.com.vn/](https://acb.com.vn/)               |
-| TPBank    | [https://ebank.tpb.vn/retail/vX/](https://ebank.tpb.vn/retail/vX/) |
+| Bank Name   | LOGIN URL                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| MB Bank     | [https://online.mbbank.com.vn/pl/login](https://online.mbbank.com.vn/pl/login)             |
+| ACB         | [https://acb.com.vn/](https://acb.com.vn/)                                                 |
+| TPBank      | [https://ebank.tpb.vn/retail/vX/](https://ebank.tpb.vn/retail/vX/)                         |
 | Vietcombank | [https://vcbdigibank.vietcombank.com.vn/auth](https://vcbdigibank.vietcombank.com.vn/auth) |
 
 ## Proxy
@@ -196,18 +271,18 @@ Mở app vcb > quản lí đăng nhập kênh > Bật "cài đặt đăng nhập
 
 B2: Mở trình duyệt, đăng nhập tại [https://vcbdigibank.vietcombank.com.vn/auth](https://vcbdigibank.vietcombank.com.vn/auth), xác nhận otp, khuân mặt (nếu có)
 
-B3: Vào <https://google.com/> >  F12 > Console, chạy script sau để lấy device_id
+B3: Vào <https://google.com/> > F12 > Console, chạy script sau để lấy device_id
 
 ```js
 const fpPromise = import('https://openfpcdn.io/fingerprintjs/v3').then(
-        (FingerprintJS) => FingerprintJS.load(),
-      );
+  (FingerprintJS) => FingerprintJS.load(),
+);
 fpPromise
   .then((fp) => fp.get())
   .then((result) => {
     const visitorId = result.visitorId;
     document.write(visitorId);
-    console.log(visitorId)
+    console.log(visitorId);
   });
 ```
 
@@ -220,7 +295,7 @@ B2: Vào trang [https://ebank.tpb.vn/retail/vX/](https://ebank.tpb.vn/retail/vX/
 B2: Bấm f12, tab console, paste đoạn code sau:
 
 ```javascript
-localStorage.deviceId
+localStorage.deviceId;
 ```
 
 ## Bot
@@ -230,27 +305,27 @@ Thêm đoạn code như sau vào file `./config/config.yml`
 ```yml
 bots:
   notification_telegram_bot:
-    type: "TELEGRAM"
-    token: "YOUR_TELEGRAM_BOT_TOKEN"
-    chat_chanel_id: "6862724379"
+    type: 'TELEGRAM'
+    token: 'YOUR_TELEGRAM_BOT_TOKEN'
+    chat_chanel_id: '6862724379'
     conditions:
-      content_regex: ".*?"
-      account_regex: ".*?"
+      content_regex: '.*?'
+      account_regex: '.*?'
     # only support in telegram
     # admin_ids can use /stopCron command
     admin_ids:
-      - "6862724379" 
+      - '6862724379'
 ```
 
-| Field             | Description                                                                                   | Example                                                              |
-|-------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
-| `type`            | Loại bot (`TELEGRAM` hoặc `DISCORD`).                                                         | `TELEGRAM`                                                           |
-| `token`           | Token của bot.                                                                                | `YOUR_TELEGRAM_BOT_TOKEN`                                            |
-| `chat_channel_id` | ID của kênh chat mà bot sẽ gửi thông báo.                                                     | `6862724379`                                                         |
-| `conditions`      | Điều kiện để bot gửi thông báo.                                                               |                                                                      |
-| &nbsp;&nbsp;`content_regex` | Regex kiểm tra nội dung tin nhắn.                                                             | `.*?` (chấp nhận mọi tin nhắn)                                       |
-| &nbsp;&nbsp;`account_regex` | Regex kiểm tra số tài khoản trong tin nhắn.                                                   | `.*?` (chấp nhận mọi số tài khoản)                                   |
-| `admin_ids`       | Danh sách ID của người dùng có quyền sử dụng lệnh `/stopCron` để dừng bot (chỉ hỗ trợ Telegram). | `6862724379` (ID của người dùng có quyền dừng bot)                   |
+| Field                       | Description                                                                                      | Example                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `type`                      | Loại bot (`TELEGRAM` hoặc `DISCORD`).                                                            | `TELEGRAM`                                         |
+| `token`                     | Token của bot.                                                                                   | `YOUR_TELEGRAM_BOT_TOKEN`                          |
+| `chat_channel_id`           | ID của kênh chat mà bot sẽ gửi thông báo.                                                        | `6862724379`                                       |
+| `conditions`                | Điều kiện để bot gửi thông báo.                                                                  |                                                    |
+| &nbsp;&nbsp;`content_regex` | Regex kiểm tra nội dung tin nhắn.                                                                | `.*?` (chấp nhận mọi tin nhắn)                     |
+| &nbsp;&nbsp;`account_regex` | Regex kiểm tra số tài khoản trong tin nhắn.                                                      | `.*?` (chấp nhận mọi số tài khoản)                 |
+| `admin_ids`                 | Danh sách ID của người dùng có quyền sử dụng lệnh `/stopCron` để dừng bot (chỉ hỗ trợ Telegram). | `6862724379` (ID của người dùng có quyền dừng bot) |
 
 ### Telegram
 
@@ -269,16 +344,16 @@ NOTE: Nếu muốn bot gửi tin nhắn vào group, hãy tắt privacy mode, và
 ```yml
 bots:
   notification_telegram_bot:
-    type: "TELEGRAM"
-    token: "YOUR_TELEGRAM_BOT_TOKEN" # thay bằng token ở step 1
-    chat_chanel_id: "6862724379" # thay bằng chat id ở step 2
+    type: 'TELEGRAM'
+    token: 'YOUR_TELEGRAM_BOT_TOKEN' # thay bằng token ở step 1
+    chat_chanel_id: '6862724379' # thay bằng chat id ở step 2
     conditions:
-      content_regex: ".*?"
-      account_regex: ".*?"
+      content_regex: '.*?'
+      account_regex: '.*?'
     # only support in telegram
     # admin_ids can use /stopCron command
     admin_ids:
-      - "6862724379" # thay bằng user id ở step 2
+      - '6862724379' # thay bằng user id ở step 2
 ```
 
 ### Bot discord
@@ -296,14 +371,11 @@ Chatid: `1189594424070639667`
 Token: `YOUR_DISCORD_WEBHOOK_TOKEN`
 
 ```javascript
-bots:
-  notification_discord_bot:
-    type: "DISCORD"
-    token: "YOUR_DISCORD_WEBHOOK_TOKEN"
-    chat_chanel_id: "1189585904591982673"
-    conditions:
-      content_regex: ".*?"
-      account_regex: ".*?"
+bots: notification_discord_bot: type: 'DISCORD';
+token: 'YOUR_DISCORD_WEBHOOK_TOKEN';
+chat_chanel_id: '1189585904591982673';
+conditions: content_regex: '.*?';
+account_regex: '.*?';
 ```
 
 ## Stop
@@ -319,24 +391,21 @@ http://localhost:3000/payments/stop-gate?name=mb_bank_1&time_in_sec=600
 Với config sau
 
 ```javascript
-webhooks: 
-  test_webhook:
-    url: "http://localhost:3001/api/payment/callback"
-    token: "123456789:ABCDEF"
-    conditions:
-      content_regex: ".*?"
-      account_regex: ".*?"
+webhooks: test_webhook: url: 'http://localhost:3001/api/payment/callback';
+token: '123456789:ABCDEF';
+conditions: content_regex: '.*?';
+account_regex: '.*?';
 ```
 
 Server web sẽ nhận được
 
 ```javascript
-const express = require("express");
+const express = require('express');
 const app = express();
 app.use(express.json());
 
-app.post("/api/payment/callback", (req, res) => {
-  const data = req.body; 
+app.post('/api/payment/callback', (req, res) => {
+  const data = req.body;
   console.log(data); // token là do bạn config ở phần webhook, payment là thông tin giao dịch
   //   {
   //     token: '123456789:ABCDEF',
@@ -349,13 +418,11 @@ app.post("/api/payment/callback", (req, res) => {
   //       gate: 'TPBANK'
   //     }
   //   }
-  res.status(200).send("Data received");
+  res.status(200).send('Data received');
 });
 app.listen(3001, () => {
-  console.log("Server running on port 3001");
+  console.log('Server running on port 3001');
 });
-
-
 ```
 
 ## API
@@ -424,7 +491,7 @@ Lưu ý, các lịch sử giao dịch cũ sẽ được cache trong redis, để
 ```ts
 + import { GateType, Payment } from '../gate.interface';
 + import { Gate } from '../gates.services';
-+ 
++
 + export class YourGatewayService extends Gate {
 +   async getHistory(): Promise<Payment[]> {
 +     // your code here

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Tạo mã VietQR và đối chiếu giao dịch ngân hàng theo yêu cầu."
+    />
+    <title>Payment Service</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Payment Service - Hung Den Tu Tuong Lai">
+          <span class="brand-mark">H</span>
+          <span>
+            <strong>Hung Den Tu Tuong Lai</strong>
+            <small>Payment Service Solution</small>
+          </span>
+        </a>
+        <div class="secure-badge"><span></span> Đối chiếu trực tiếp</div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">THANH TOÁN VIETQR</p>
+          <h1>Chuyển khoản.<br />Xác nhận trong một chạm.</h1>
+          <p class="hero-copy">
+            Nhập số tiền, quét mã QR rồi chủ động kiểm tra giao dịch khi bạn đã
+            hoàn tất chuyển khoản.
+          </p>
+        </div>
+        <div class="steps" aria-label="Quy trình thanh toán">
+          <div class="step active">
+            <span>1</span>
+            <p>Tạo QR</p>
+          </div>
+          <i></i>
+          <div class="step">
+            <span>2</span>
+            <p>Chuyển tiền</p>
+          </div>
+          <i></i>
+          <div class="step">
+            <span>3</span>
+            <p>Đối chiếu</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="checkout-grid">
+        <article class="card form-card">
+          <div class="card-heading">
+            <div>
+              <p class="section-label">THÔNG TIN THANH TOÁN</p>
+              <h2>Tạo yêu cầu mới</h2>
+            </div>
+            <span class="card-number">01</span>
+          </div>
+
+          <form id="payment-form">
+            <label for="amount">Số tiền cần thanh toán</label>
+            <div class="amount-field">
+              <input
+                id="amount"
+                name="amount"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="0"
+                required
+              />
+              <span>VND</span>
+            </div>
+            <p class="field-hint">Tối thiểu 2.000 VND</p>
+
+            <label for="gateway">Tài khoản nhận tiền</label>
+            <div class="select-wrap">
+              <select id="gateway" name="gateway" required>
+                <option value="">Đang tải tài khoản...</option>
+              </select>
+            </div>
+
+            <div class="quick-amounts" aria-label="Chọn nhanh số tiền">
+              <button type="button" data-amount="50000">50.000đ</button>
+              <button type="button" data-amount="100000">100.000đ</button>
+              <button type="button" data-amount="200000">200.000đ</button>
+              <button type="button" data-amount="500000">500.000đ</button>
+            </div>
+
+            <button class="primary-button" type="submit">
+              Tạo mã QR thanh toán
+              <span>→</span>
+            </button>
+          </form>
+
+          <div class="trust-note">
+            <span>✓</span>
+            Hệ thống chỉ truy vấn giao dịch sau khi bạn bấm xác nhận.
+          </div>
+        </article>
+
+        <article class="card payment-card" id="payment-card">
+          <div class="empty-state" id="empty-state">
+            <div class="qr-placeholder">
+              <span></span><span></span><span></span><span></span>
+              <b>QR</b>
+            </div>
+            <h2>Mã QR sẽ xuất hiện tại đây</h2>
+            <p>Điền số tiền và chọn tài khoản để bắt đầu.</p>
+          </div>
+
+          <div class="payment-content hidden" id="payment-content">
+            <div class="payment-header">
+              <div>
+                <p class="section-label">QUÉT MÃ ĐỂ THANH TOÁN</p>
+                <h2 id="payment-bank">Ngân hàng</h2>
+              </div>
+              <div class="status-pill" id="status-pill">Chờ chuyển khoản</div>
+            </div>
+
+            <div class="qr-stage">
+              <div class="qr-frame">
+                <img id="qr-image" alt="Mã QR chuyển khoản VietQR" />
+              </div>
+              <p>Mở ứng dụng ngân hàng và quét mã QR</p>
+            </div>
+
+            <dl class="payment-details">
+              <div>
+                <dt>Số tiền</dt>
+                <dd id="payment-amount"></dd>
+              </div>
+              <div>
+                <dt>Chủ tài khoản</dt>
+                <dd id="account-name"></dd>
+              </div>
+              <div>
+                <dt>Số tài khoản</dt>
+                <dd>
+                  <span id="account-number"></span>
+                  <button type="button" class="copy-button" data-copy="account">
+                    Sao chép
+                  </button>
+                </dd>
+              </div>
+              <div class="description-row">
+                <dt>Nội dung chuyển khoản</dt>
+                <dd>
+                  <strong id="payment-description"></strong>
+                  <button
+                    type="button"
+                    class="copy-button"
+                    data-copy="description"
+                  >
+                    Sao chép
+                  </button>
+                </dd>
+              </div>
+            </dl>
+
+            <div class="notice">
+              Chuyển đúng <strong>số tiền</strong> và
+              <strong>nội dung</strong> để hệ thống đối chiếu chính xác.
+            </div>
+
+            <button class="confirm-button" id="confirm-button" type="button">
+              <span class="button-label">Tôi đã chuyển tiền</span>
+              <span class="button-icon">✓</span>
+            </button>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div class="result-overlay hidden" id="result-overlay">
+      <section class="result-dialog" role="dialog" aria-modal="true">
+        <div class="result-icon" id="result-icon">✓</div>
+        <p class="section-label" id="result-label">THANH TOÁN THÀNH CÔNG</p>
+        <h2 id="result-title">Đã tìm thấy giao dịch</h2>
+        <p id="result-message"></p>
+        <div class="result-transaction hidden" id="result-transaction">
+          <span>Mã giao dịch</span>
+          <strong id="transaction-id"></strong>
+        </div>
+        <div class="result-actions">
+          <button type="button" id="close-result">Đóng</button>
+          <button type="button" id="new-payment">Tạo thanh toán mới</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast hidden" id="toast">Đã sao chép</div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

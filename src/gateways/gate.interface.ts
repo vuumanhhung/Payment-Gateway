@@ -18,10 +18,13 @@ export interface Payment {
 export interface GateConfig {
   name: string;
   type: GateType;
+  enabled?: boolean;
   password?: string;
   login_id?: string;
   account: string;
-  token: string;
+  account_name?: string;
+  bank_id?: string;
+  token?: string;
   repeat_interval_in_sec: number;
   proxy?: string;
   device_id?: string;
