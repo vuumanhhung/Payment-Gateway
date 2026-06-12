@@ -60,7 +60,7 @@ class ProcessOutputBuffer {
 }
 
 export class ACBBankService extends Gate {
-  private jar: _request.CookieJar;
+  private jar: _request.CookieJar | undefined;
   private request: _request.RequestPromiseAPI | undefined = undefined;
   private dse_sessionId: string | undefined;
   private dse_processorId: string | undefined;
@@ -180,6 +180,11 @@ export class ACBBankService extends Gate {
   parseAcbHistory(html: string): Payment[] {
     const document = parse(html);
     const table = document.getElementById('table1');
+    if (!table) {
+      throw new Error(
+        'ACB transaction history table was not found; the session may have expired',
+      );
+    }
     const rows = table.querySelectorAll('tr');
 
     const payments: Payment[] = [];
@@ -499,6 +504,33 @@ export class ACBBankService extends Gate {
       await sleep(1000);
     }
 
+    try {
+      return await this.fetchHistory();
+    } catch (firstError) {
+      const message =
+        firstError instanceof Error ? firstError.message : String(firstError);
+      console.warn(
+        `ACBBankService history request failed, refreshing session: ${message}`,
+      );
+      this.clearSession();
+
+      try {
+        await this.login();
+        await sleep(1000);
+        return await this.fetchHistory();
+      } catch (retryError) {
+        console.error('ACBBankService history retry failed', retryError);
+        this.clearSession();
+        throw retryError;
+      }
+    }
+  }
+
+  private async fetchHistory(): Promise<Payment[]> {
+    if (!this.request || !this.dse_sessionId || !this.dse_processorId) {
+      throw new Error('ACB session is not initialized');
+    }
+
     const fromDate = moment()
       .tz('Asia/Ho_Chi_Minh')
       .subtract(this.config.get_transaction_day_limit, 'days')
@@ -527,28 +559,20 @@ export class ACBBankService extends Gate {
       ToDate: toDate,
     };
 
-    try {
-      const historyPageHtml = await this.request({
-        uri: 'https://online.acb.com.vn/acbib/Request',
-        method: 'POST',
-        form: dataSend,
-        proxy: this.getProxyString(),
-      });
-      // await fs.promises.writeFile('acb2.2.html', historyPageHtml);
+    const historyPageHtml = await this.request({
+      uri: 'https://online.acb.com.vn/acbib/Request',
+      method: 'POST',
+      form: dataSend,
+      proxy: this.getProxyString(),
+    });
 
-      const payments = this.parseAcbHistory(historyPageHtml);
+    return this.parseAcbHistory(historyPageHtml);
+  }
 
-      return payments;
-    } catch (error) {
-      console.error(error);
-
-      try {
-        await this.login();
-      } catch (error) {
-        console.error(error);
-      }
-
-      throw error;
-    }
+  private clearSession() {
+    this.request = undefined;
+    this.jar = undefined;
+    this.dse_sessionId = undefined;
+    this.dse_processorId = undefined;
   }
 }

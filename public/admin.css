@@ -784,6 +784,28 @@ nav {
   gap: 15px;
 }
 
+.bank-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.edit-bank-button {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--green-dark);
+  background: white;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.edit-bank-button:hover {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
 .bank-identity {
   display: flex;
   align-items: center;
@@ -1001,6 +1023,10 @@ td.align-right {
   gap: 15px;
 }
 
+.form-grid-wide {
+  grid-column: 1 / -1;
+}
+
 .toggle-row {
   display: flex !important;
   align-items: center;
@@ -1012,6 +1038,10 @@ td.align-right {
 .toggle-row input {
   width: 16px;
   height: 16px;
+}
+
+.toggle-row b {
+  font-weight: 800;
 }
 
 .modal-actions {

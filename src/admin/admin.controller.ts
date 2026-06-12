@@ -109,6 +109,7 @@ export class AdminController {
       accountName?: string;
       bankId?: string;
       deviceId?: string;
+      userAgent?: string;
     },
   ) {
     return this.adminService.createBank(body);
@@ -118,6 +119,26 @@ export class AdminController {
   @UseGuards(AdminSessionGuard)
   toggleBank(@Param('name') name: string, @Body() body: { enabled: boolean }) {
     return this.adminService.toggleBank(name, body.enabled === true);
+  }
+
+  @Patch('banks/:name')
+  @UseGuards(AdminSessionGuard)
+  updateBank(
+    @Param('name') name: string,
+    @Body()
+    body: {
+      type?: GateType;
+      enabled?: boolean;
+      loginId?: string;
+      password?: string;
+      account?: string;
+      accountName?: string;
+      bankId?: string;
+      deviceId?: string;
+      userAgent?: string;
+    },
+  ) {
+    return this.adminService.updateBank(name, body);
   }
 
   @Get('transactions')

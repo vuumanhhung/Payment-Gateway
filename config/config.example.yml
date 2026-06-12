@@ -73,6 +73,19 @@ gateways:
     bank_id: '970416'
     login_id: 'TEN_DANG_NHAP'
     repeat_interval_in_sec: 10
+  vcb_bank_1:
+    type: 'VCBBANK'
+    enabled: true
+    password: 'MAT_KHAU_DANG_NHAP'
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN KHONG DAU'
+    bank_id: '970436'
+    login_id: 'TEN_DANG_NHAP'
+    device_id: 'DEVICE_ID_DA_DUOC_VCB_XAC_THUC'
+    user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+    get_transaction_count_limit: 100
   tron_usdt_1:
     type: 'TRON_USDT_BLOCKCHAIN'
     account: 'DIA_CHI_VI'

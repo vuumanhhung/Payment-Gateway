@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -38,6 +39,7 @@ type CheckoutRequest = {
 
 @Injectable()
 export class CheckoutService {
+  private readonly logger = new Logger(CheckoutService.name);
   private readonly requests = new Map<string, CheckoutRequest>();
   private readonly verifications = new Map<string, Promise<CheckoutRequest>>();
 
@@ -163,6 +165,16 @@ export class CheckoutService {
         const matched = result.payments.find((payment) =>
           this.isMatchingPayment(request, payment),
         );
+        this.logger.log(
+          JSON.stringify({
+            label: 'PaymentCheck',
+            gateway: request.target.gatewayName,
+            attempt: attempt + 1,
+            payments: result.payments.length,
+            matched: Boolean(matched),
+            timedOut: result.timedOut,
+          }),
+        );
 
         if (matched) {
           request.status = 'success';
@@ -172,6 +184,11 @@ export class CheckoutService {
           return request;
         }
       } catch (error) {
+        this.logger.error(
+          `[${request.target.gatewayName}] Kiểm tra giao dịch lỗi: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`,
+        );
         request.status = 'failed';
         request.updatedAt = new Date();
         request.failureReason =
@@ -192,6 +209,9 @@ export class CheckoutService {
     request.status = 'failed';
     request.updatedAt = new Date();
     request.failureReason = 'Giao dịch thất bại, vui lòng kiểm tra lại';
+    this.logger.warn(
+      `[${request.target.gatewayName}] Không tìm thấy giao dịch khớp sau ${maxAttempts} lần kiểm tra`,
+    );
     return request;
   }
 

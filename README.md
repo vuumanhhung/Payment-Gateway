@@ -1,566 +1,769 @@
-# Payment service
+# Payment Gateway
 
-# 📢 Thông báo quan trọng
+Payment Gateway là dịch vụ NestJS tự host để đăng nhập ngân hàng, tạo mã
+VietQR, đối chiếu giao dịch theo yêu cầu và phát sự kiện thanh toán sang
+dashboard, webhook, Telegram hoặc Discord.
 
-Dự án này không còn phát triển thêm tính năng mới và không hỗ trợ cài đặt mới từ thời điểm hiện tại, do một số lý do pháp lý.
+> Dự án sử dụng luồng web/API không chính thức của ngân hàng. Giao diện, cơ chế
+> xác thực và endpoint phía ngân hàng có thể thay đổi bất kỳ lúc nào. Không nên
+> coi đây là cổng thanh toán được ngân hàng bảo chứng.
 
-Tuy vậy, các chức năng hiện tại vẫn đang hoạt động bình thường. Qua kiểm tra gần đây, các tích hợp liên quan đến USDT, VCB và TP Bank vẫn vận hành ổn định.
+![Luồng xử lý gateway, payment, bot và webhook](./docs/main-desc.png)
 
-Cảm ơn tất cả mọi người đã quan tâm và đồng hành cùng dự án trong suốt thời gian qua!
-
-# Mục đích
-
-- Free 100%
-
-- Open source, self host, sử dụng api gốc của ngân hàng.
-
-- Bảo mật thông tin giao dịch và thông tin đăng nhập ngân hàng.
-
-- Thông báo qua telegram, discord.
-
-- Gửi webhook để các service khác cộng số dư cho user.
-
-- API danh sách giao dịch.
-
-- Không giới hạn số lượng giao dịch.
+## Tính năng
 
 - Trang thanh toán VietQR tại `http://localhost:<PORT>`.
+- Tạo nội dung chuyển khoản ngẫu nhiên dạng `PAY...`.
+- Chỉ truy vấn lịch sử sau khi người dùng bấm **Tôi đã chuyển tiền**.
+- Đối chiếu theo tài khoản nhận, số tiền, nội dung và thời điểm giao dịch.
+- Đăng nhập sẵn các gateway khi khởi động nhưng chưa lấy lịch sử.
+- Admin dashboard tại secret URL được sinh tự động.
+- Thêm, sửa, bật hoặc tắt ACB, MB Bank, TPBank và Vietcombank từ dashboard.
+- Xem trạng thái gateway và lịch sử giao dịch đã ghi nhận.
+- API lấy giao dịch và API tạo/xác minh yêu cầu thanh toán.
+- Gửi webhook và thông báo Telegram/Discord qua BullMQ.
+- Lưu tối đa 500 giao dịch gần nhất trong bộ nhớ và Redis.
+- Hỗ trợ proxy tĩnh hoặc proxy có URL đổi IP.
+- Có thể bật lại chế độ polling tự động nếu cần.
 
-- Chỉ lấy lịch sử ngân hàng khi người dùng bấm "Tôi đã chuyển tiền".
+## Gateway hỗ trợ
 
-- Admin dashboard tại secret URL được sinh tự động khi chạy lần đầu.
+| Gateway     | Đăng nhập            | Lấy lịch sử  | Yêu cầu đặc biệt                      |
+| ----------- | -------------------- | ------------ | ------------------------------------- |
+| MB Bank     | Playwright + captcha | API          | Chromium và captcha resolver          |
+| ACB         | Playwright + captcha | HTTP session | SafeKey khi xác thực thiết bị mới     |
+| TPBank      | API                  | API          | `device_id` đã được xác thực          |
+| Vietcombank | API mã hóa           | API mã hóa   | `device_id` và `user_agent` phải khớp |
+| TRON USDT   | Không cần đăng nhập  | TronGrid     | Địa chỉ ví TRC20                      |
+| BEP20 USDT  | API key              | Etherscan V2 | Địa chỉ ví và Etherscan API key       |
 
-- Cài đặt đơn giản: sửa file config, chạy lệnh docker-compose up.
+Admin dashboard chỉ quản lý bốn gateway ngân hàng. Gateway USDT được cấu hình
+trực tiếp trong `config/config.yml`.
 
-- Source có khả năng thêm các cổng thanh toán tuỳ chỉnh dễ dàng.
+Gateway USDT không xuất hiện trong danh sách tài khoản VietQR. Với implementation
+hiện tại, cần bật `GATEWAY_AUTO_CRON=true` nếu muốn TRON/BEP20 tự lấy và phát
+hiện giao dịch.
 
-- Sử dụng bullmq đảm bảo webhook, thông báo được gửi đi.
+## Luồng hoạt động
 
-- Ngân hàng hỗ trợ:
-  - VCB Bank: Full API
-  - TP Bank: Full API
-  - MB Bank: Lấy lịch sử qua API, Đăng nhập qua headless browser
-  - ACB Bank: Lấy lịch sử qua API, Đăng nhập qua headless browser
-  - USDT (Tron, Bep20): Full API
+### Chế độ đối chiếu theo yêu cầu
 
-![image info](./docs/main-desc.png)
+Đây là chế độ mặc định với `GATEWAY_AUTO_CRON=false`:
 
-# Cài đặt
+1. Service đăng nhập sẵn các gateway khi khởi động nếu
+   `GATEWAY_PRELOGIN=true`.
+2. Người dùng nhập số tiền và chọn tài khoản nhận.
+3. Service tạo yêu cầu thanh toán, nội dung chuyển khoản và VietQR Quick Link.
+4. Người dùng chuyển khoản rồi bấm **Tôi đã chuyển tiền**.
+5. Service lấy lịch sử của đúng gateway được chọn.
+6. Giao dịch thành công khi khớp:
+   - Số tài khoản nhận.
+   - Số tiền.
+   - Nội dung chuyển khoản.
+   - Thời gian không cũ hơn hai phút trước lúc tạo yêu cầu.
+7. Giao dịch khớp được đưa vào PaymentService, sau đó có thể gửi webhook hoặc
+   thông báo bot.
 
-## Hỗ trợ
+Mỗi yêu cầu tồn tại trong bộ nhớ 15 phút và sẽ mất khi service khởi động lại.
+Số tiền hợp lệ từ `2.000` đến `9.999.999.999.999` VND.
 
-- Docker in Ubuntu
-- Docker in window (wsl2)
-- NOT support Docker in mac os (need someone to fix it)
-- Other os: (no test yet)
+### Chế độ polling tự động
 
-## Cài đặt cơ bản
+Đặt `GATEWAY_AUTO_CRON=true` để mỗi gateway tự lấy lịch sử theo
+`repeat_interval_in_sec`. Các giao dịch mới sẽ được lưu và chuyển tiếp sang bot,
+webhook mà không cần thao tác trên trang thanh toán.
 
-### Bước 1: Cài đặt docker và docker-compose trên máy chủ
+## Yêu cầu hệ thống
 
-[https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-20-04](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-20-04)
+### Chạy local
 
-[https://docs.docker.com/desktop/install/windows-install/](https://docs.docker.com/desktop/install/windows-install/)
+- Node.js 20 trở lên.
+- pnpm 9.
+- Docker Desktop hoặc Docker Engine để chạy Redis và captcha resolver.
+- Chromium do Playwright quản lý.
 
-[https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-compose-on-ubuntu-20-04](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-compose-on-ubuntu-20-04)
+### Chạy bằng Docker
 
-### Bước 2: Cấu trúc thư mục
+- Docker Engine hoặc Docker Desktop.
+- Docker Compose.
+- Terminal có thể attach nếu ACB cần nhập SafeKey.
 
-```javascript
+## Cài đặt local
 
-├── .docker/
-│   └── config/
-│       └── config.yml
-├── docker-compose.yml
+### 1. Cài pnpm
+
+```bash
+corepack enable
+corepack prepare pnpm@9.15.9 --activate
+hash -r
 ```
 
-Lỗi đã biết:
+### 2. Cài dependency và Chromium
 
-- Có thể báo lỗi không có quyền đọc file config.yml, vui lòng cấp quyền đọc
-
-### Bước 3: Tạo file `docker-compose.yml`
-
-```yml
-version: '3'
-volumes:
-  redis-data:
-    driver: local
-services:
-  app:
-    image: registry.gitlab.com/nhayhoc/payment-service
-    volumes:
-      - ./.docker/config/config.yml:/app/config/config.yml
-    ports:
-      - 3000:3000
-    depends_on:
-      - redis
-      - captcha-resolver
-    environment:
-      - PORT=3000
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CAPTCHA_API_BASE_URL=https://bank-captcha.payment.com.vn
-      # If want self-hosted captcha server, edit CAPTCHA_API_BASE_URL to your service
-      # CAPTCHA_API_BASE_URL to http://captcha-resolver:1234
-
-      # If need config for webhook telegram, where DOMAIN Telegram will make HTTP Post
-      # SERVICE_DOMAIN=
-  redis:
-    image: redis:6.2-alpine
-    volumes:
-      - redis-data:/data
-  # If want self-hosted captcha server, remove comment
-  # captcha-resolver:
-  #  image: registry.gitlab.com/nhayhoc/bank-captcha-server
+```bash
+pnpm install
+pnpm playwright install chromium
 ```
 
-### Bước 4: Tạo file `.docker/config/config.yml`
+### 3. Tạo file cấu hình
 
-```yml
-# Xem file hoàn chỉnh tại ./config/config.example.yml
-bots:
-  # Hướng dẫn cài bot ở phía dưới
-proxies:
-  # Hướng dẫn cài proxies ở phía dưới
-webhooks:
-  # Hướng dẫn cài webhook ở phía dưới
-gateways:
-  mb_bank_1:
-    type: 'MBBANK'
-    password: 'bank password'
-    account: 'stk nhan tien'
-    login_id: 'ten dang nhap bank'
-    repeat_interval_in_sec: 20
-  # vcb_bank_1:
-  #   type: 'VCBBANK'
-  #   password: 'bank password'
-  #   account: 'stk nhan tien'
-  #   login_id: 'ten dang nhap'
-  #   device_id: 'huong dan lay phia duoi'
-  #   repeat_interval_in_sec: 20
-  #   proxy: 'proxy_1'
+```bash
+cp .env.example .env
+cp config/config.example.yml config/config.yml
 ```
 
-Giải thích:
-
-| Field                                     | Description                                                                                                                                                                        |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gateways`                                |                                                                                                                                                                                    |
-| &nbsp;&nbsp;`mb_bank_1`                   | Tên gateway, đặt tuỳ ý.                                                                                                                                                            |
-| &nbsp;&nbsp;`type`                        | `VCBBANK` \| `MBBANK` \| `ACBBANK` \| `TPBANK` \| `TRON_USDT_BLOCKCHAIN` \| `BEP20_USDT_BLOCKCHAIN`.                                                                               |
-| &nbsp;&nbsp;`password`                    | Pass login bank. Nếu dùng bep20 usdt thì điền api token bscscan.                                                                                                                   |
-| &nbsp;&nbsp;`account`                     | STK nhận tiền hoặc địa chỉ ví tron.                                                                                                                                                |
-| &nbsp;&nbsp;`account_name`                | Tên chủ tài khoản không dấu dùng để hiển thị trên trang thanh toán và ảnh VietQR.                                                                                                  |
-| &nbsp;&nbsp;`bank_id`                     | Mã BIN ngân hàng dùng để tạo VietQR Quick Link. Ví dụ MB Bank là `970422`, ACB là `970416`.                                                                                        |
-| &nbsp;&nbsp;`login_id`                    | User đăng nhập bank.                                                                                                                                                               |
-| &nbsp;&nbsp;`repeat_interval_in_sec`      | Thời gian polling lịch sử, đơn vị giây.                                                                                                                                            |
-| &nbsp;&nbsp;`device_id`                   | ID browser mà bạn đã từng login thành công. Việc này giúp hạn chế yêu cầu nhập lại OTP hoặc thực hiện xác thực khuôn mặt khi payment-service login.                                |
-| &nbsp;&nbsp;`proxy`                       | Tên proxy (nếu có).                                                                                                                                                                |
-| &nbsp;&nbsp;`get_transaction_count_limit` | (Mặc định 100) Giới hạn số lượng giao dịch khi call api bank (Bank support: TP Bank, VCB).                                                                                         |
-| &nbsp;&nbsp;`get_transaction_day_limit`   | (Mặc định 14) Số ngày tính từ hiện tại về trước. (Bank support: VCB, TPBank, ACB, MB Bank). Ví dụ hôm nay là 30/7, get_transaction_day_limit=14 => lấy giao dịch từ 16/7 tới 30/7. |
-
-### Bước 5: Chạy lệnh `docker-compose up -d`
-
-## Trang thanh toán VietQR
-
-Mặc định service không còn tự động polling lịch sử ngân hàng. Truy cập:
-
-```text
-http://localhost:3001
-```
-
-Luồng thanh toán:
-
-1. Nhập số tiền và chọn tài khoản nhận.
-2. Service sinh nội dung chuyển khoản duy nhất và tạo ảnh `qr_only` bằng VietQR Quick Link.
-3. Người dùng quét QR và chuyển đúng số tiền, đúng nội dung.
-4. Khi bấm **Tôi đã chuyển tiền**, service mới lấy lịch sử của gateway đã chọn.
-5. Giao dịch chỉ thành công khi khớp tài khoản nhận, số tiền và nội dung chuyển khoản.
-
-Cấu hình gateway dùng cho QR:
-
-```yml
-gateways:
-  mb_bank_1:
-    type: 'MBBANK'
-    password: 'MAT_KHAU_DANG_NHAP'
-    account: 'SO_TAI_KHOAN'
-    account_name: 'TEN CHU TAI KHOAN KHONG DAU'
-    bank_id: '970422'
-    login_id: 'TEN_DANG_NHAP'
-    repeat_interval_in_sec: 10
-```
-
-Cấu hình thời gian đối chiếu trong `.env`:
+Khi chạy app bằng `pnpm`, sửa các dòng sau trong `.env`:
 
 ```dotenv
+PORT=3001
+REDIS_HOST=localhost
+REDIS_PORT=6380
+CAPTCHA_API_BASE_URL=http://localhost:1234
 GATEWAY_AUTO_CRON=false
 GATEWAY_PRELOGIN=true
 PAYMENT_CHECK_TIMEOUT_SEC=30
 PAYMENT_CHECK_INTERVAL_SEC=15
 PAYMENT_CHECK_MAX_ATTEMPTS=2
+DISABLE_SYNC_REDIS=true
 ```
 
-`PAYMENT_CHECK_TIMEOUT_SEC` là tổng thời gian tìm giao dịch sau khi người dùng
-bấm xác nhận. `PAYMENT_CHECK_INTERVAL_SEC` là khoảng nghỉ giữa hai lần kiểm tra.
-`PAYMENT_CHECK_MAX_ATTEMPTS` giới hạn tổng số lượt lấy lịch sử giao dịch.
-`GATEWAY_PRELOGIN=true` đăng nhập sẵn tuần tự vào các ngân hàng khi service khởi
-động nhưng chưa lấy lịch sử giao dịch.
-Đặt `GATEWAY_AUTO_CRON=true` chỉ khi muốn bật lại cơ chế polling cũ.
+### 4. Chạy Redis và captcha resolver
 
-## Admin dashboard
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
 
-Lần chạy đầu, service tự tạo URL gồm 24 ký tự chữ/số và mật khẩu quản trị. Hai
-giá trị này được in trên console. Hash mật khẩu và session secret được lưu tại:
+Kiểm tra:
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+```
+
+### 5. Cấu hình gateway
+
+Sửa `config/config.yml`. Có thể bắt đầu với một ngân hàng để kiểm tra đăng nhập
+trước khi bật nhiều gateway.
+
+`config/config.example.yml` là mẫu tổng hợp, không phải cấu hình chạy ngay. Hãy:
+
+- Đặt `bots: {}`, `webhooks: {}` và `proxies: {}` nếu chưa sử dụng.
+- Xóa các gateway không dùng.
+- Xóa field `proxy` khỏi gateway nếu không có proxy thật.
+- Thay toàn bộ giá trị placeholder trước khi khởi động.
+
+### 6. Chạy service
+
+```bash
+pnpm start
+```
+
+Chế độ tự reload:
+
+```bash
+pnpm start:dev
+```
+
+Mở trang thanh toán:
 
 ```text
-.admin-data/admin.json
+http://localhost:3001
 ```
 
-File này đã được ignore khỏi Git. Mật khẩu chỉ hiện một lần; nếu quên, xóa
-`.admin-data/admin.json` rồi khởi động lại service để tạo bộ credential mới.
+## Cài đặt bằng Docker
 
-Dashboard hỗ trợ:
+### 1. Tạo cấu hình
 
-- Xem trạng thái đăng nhập của ACB, MB Bank, TPBank và Vietcombank.
-- Bật hoặc tắt từng gateway mà không cần sửa YAML thủ công.
-- Thêm tài khoản ngân hàng và lưu trực tiếp vào `config/config.yml`.
-- Xem, lọc và tìm kiếm lịch sử giao dịch đã được hệ thống ghi nhận.
+```bash
+cp .env.example .env
+cp config/config.example.yml config/config.yml
+```
 
-API admin dùng signed `HttpOnly` session cookie và không trả mật khẩu hoặc tên
-đăng nhập ngân hàng nguyên bản về trình duyệt.
+Rút gọn `config/config.yml` theo gateway thực tế trước khi chạy. Không giữ bot,
+webhook hoặc proxy placeholder từ file mẫu.
 
-### NOTE
+Giữ cấu hình kết nối nội bộ Docker:
 
-- Hãy đảm bảo **đúng thông tin đăng nhập** trước khi nhập vào service, tránh service spam dẫn tới bị khoá IP/account
-- Vào cài đặt ngân hàng tương ứng, tìm **tắt 2fa**.
-- TP Bank, VCB yêu cầu phải có `device_id`, đọc mục hướng dẫn lấy device_id để biết thêm chi tiết.
+```dotenv
+PORT=3001
+REDIS_HOST=redis
+REDIS_PORT=6379
+CAPTCHA_API_BASE_URL=http://captcha-resolver:1234
+```
 
-| Bank Name   | LOGIN URL                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------ |
-| MB Bank     | [https://online.mbbank.com.vn/pl/login](https://online.mbbank.com.vn/pl/login)             |
-| ACB         | [https://acb.com.vn/](https://acb.com.vn/)                                                 |
-| TPBank      | [https://ebank.tpb.vn/retail/vX/](https://ebank.tpb.vn/retail/vX/)                         |
-| Vietcombank | [https://vcbdigibank.vietcombank.com.vn/auth](https://vcbdigibank.vietcombank.com.vn/auth) |
+### 2. Build và chạy
+
+```bash
+docker compose up --build
+```
+
+Chạy nền:
+
+```bash
+docker compose up -d --build
+docker compose logs -f app
+```
+
+Các thư mục sau được mount để giữ dữ liệu qua lần tạo lại container:
+
+- `config/config.yml`
+- `.browser-data`
+- `.admin-data`
+
+Nếu ACB cần nhập SafeKey từ terminal, chạy foreground hoặc attach vào container:
+
+```bash
+docker attach "$(docker compose ps -q app)"
+```
+
+## Biến môi trường
+
+| Biến                         | Mặc định                 | Ý nghĩa                                                                          |
+| ---------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
+| `PORT`                       | `3000`                   | Cổng HTTP của service.                                                           |
+| `REDIS_HOST`                 | Bắt buộc                 | Host Redis. Local thường là `localhost`, Docker là `redis`.                      |
+| `REDIS_PORT`                 | Bắt buộc                 | Port Redis. Local dev compose dùng `6380`, Docker dùng `6379`.                   |
+| `CAPTCHA_API_BASE_URL`       | Bắt buộc                 | Base URL của captcha resolver, không gồm `/resolver`.                            |
+| `GATEWAY_PRELOGIN`           | `true`                   | Đăng nhập sẵn gateway khi service khởi động.                                     |
+| `GATEWAY_AUTO_CRON`          | `false`                  | Bật polling lịch sử tự động.                                                     |
+| `PAYMENT_CHECK_TIMEOUT_SEC`  | `30`                     | Tổng thời gian tối đa cho một lượt xác minh.                                     |
+| `PAYMENT_CHECK_INTERVAL_SEC` | `15`                     | Thời lượng dành cho mỗi lần kiểm tra/khoảng chờ giữa các lần.                    |
+| `PAYMENT_CHECK_MAX_ATTEMPTS` | `2`                      | Số lần lấy lịch sử tối đa trong một lượt xác minh.                               |
+| `DISABLE_SYNC_REDIS`         | Không đặt                | `true` hiện chỉ bỏ bước nạp payment cũ từ Redis. File `.env.example` đặt `true`. |
+| `ACB_SAFEKEY_CONSOLE`        | `false`                  | Nhập ACB SafeKey sáu số ngay trong terminal.                                     |
+| `ACB_MANUAL_LOGIN`           | `false`                  | Mở trình duyệt ACB để xác thực thủ công. Phù hợp khi chạy local có GUI.          |
+| `SERVICE_DOMAIN`             | Không đặt                | Domain HTTPS dùng để Telegram gọi webhook. Không đặt thì bot dùng polling.       |
+| `PAYMENT_CONFIG_PATH`        | `config/config.yml`      | Đường dẫn YAML cấu hình runtime.                                                 |
+| `ADMIN_DATA_PATH`            | `.admin-data/admin.json` | Nơi lưu cấu hình xác thực admin.                                                 |
+
+Redis vẫn cần thiết cho hàng đợi webhook và bot, kể cả khi
+`DISABLE_SYNC_REDIS=true`. Lưu ý implementation hiện tại vẫn gọi `saveRedis()`
+khi nhận payment mới; biến này chưa tắt hoàn toàn thao tác ghi Redis.
+
+## Cấu hình YAML
+
+File runtime mặc định là `config/config.yml`. File này chứa thông tin đăng nhập
+ngân hàng và đã được ignore khỏi Git.
+
+Cấu trúc:
+
+```yml
+bots: {}
+webhooks: {}
+proxies: {}
+gateways: {}
+```
+
+### Thuộc tính gateway
+
+| Field                         | Bắt buộc                | Ý nghĩa                                               |
+| ----------------------------- | ----------------------- | ----------------------------------------------------- |
+| `type`                        | Có                      | Loại gateway.                                         |
+| `enabled`                     | Không                   | `false` để không khởi tạo gateway. Mặc định `true`.   |
+| `login_id`                    | Gateway ngân hàng       | Tên đăng nhập Internet Banking.                       |
+| `password`                    | Gateway ngân hàng/BEP20 | Mật khẩu ngân hàng hoặc Etherscan API key với BEP20.  |
+| `account`                     | Có                      | Số tài khoản nhận hoặc địa chỉ ví.                    |
+| `account_name`                | Không                   | Tên chủ tài khoản hiển thị trên trang và VietQR.      |
+| `bank_id`                     | Không                   | BIN dùng tạo VietQR.                                  |
+| `device_id`                   | TPBank, VCB             | ID trình duyệt/thiết bị đã xác thực.                  |
+| `user_agent`                  | Khuyến nghị với VCB     | Phải khớp User-Agent khi lấy và xác thực `device_id`. |
+| `proxy`                       | Không                   | Tên proxy trong khối `proxies`.                       |
+| `repeat_interval_in_sec`      | Có                      | Chu kỳ polling, từ 1 đến 120 giây.                    |
+| `get_transaction_day_limit`   | Không                   | Số ngày lịch sử, mặc định 14.                         |
+| `get_transaction_count_limit` | Không                   | Số bản ghi tối đa, mặc định 100.                      |
+
+BIN mặc định trên admin:
+
+| Ngân hàng   | BIN      |
+| ----------- | -------- |
+| MB Bank     | `970422` |
+| ACB         | `970416` |
+| TPBank      | `970423` |
+| Vietcombank | `970436` |
+
+### MB Bank
+
+```yml
+gateways:
+  mb_bank_1:
+    type: 'MBBANK'
+    enabled: true
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU'
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN'
+    bank_id: '970422'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+```
+
+MB Bank đăng nhập bằng Chromium, lấy captcha từ trang ngân hàng và gửi ảnh sang
+captcha resolver.
+
+### ACB
+
+```yml
+gateways:
+  acb_bank_1:
+    type: 'ACBBANK'
+    enabled: true
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU'
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN'
+    bank_id: '970416'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+```
+
+ACB lưu profile Playwright riêng tại:
+
+```text
+.browser-data/acb-<tên_gateway>
+```
+
+Khi ACB báo thiết bị hoặc trình duyệt mới:
+
+1. Dừng service.
+2. Đặt `ACB_SAFEKEY_CONSOLE=true` trong `.env`.
+3. Chạy lại service bằng terminal tương tác.
+4. Nhập đúng sáu số SafeKey rồi nhấn Enter.
+5. Sau khi đăng nhập thành công, có thể tắt biến này.
+
+Nếu chạy local có GUI, có thể dùng `ACB_MANUAL_LOGIN=true` để hoàn tất xác thực
+trong cửa sổ Chromium.
+
+Khi session ACB hết hạn, service tự đăng nhập lại và thử lấy lịch sử thêm một
+lần trong cùng lượt xác minh.
+
+### TPBank
+
+```yml
+gateways:
+  tp_bank_1:
+    type: 'TPBANK'
+    enabled: true
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU'
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN'
+    bank_id: '970423'
+    device_id: 'DEVICE_ID_DA_XAC_THUC'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+    get_transaction_count_limit: 100
+```
+
+Lấy `device_id`:
+
+1. Đăng nhập tại <https://ebank.tpb.vn/retail/vX/>.
+2. Mở DevTools → Console.
+3. Chạy:
+
+```js
+localStorage.deviceId;
+```
+
+Nếu API lịch sử trả `401`, service xóa access token, đăng nhập lại và thử đúng
+một lần. TPBank đôi khi chỉ trả ngày mà không có giờ; với giao dịch của ngày
+hiện tại, service dùng thời điểm quét để tránh loại nhầm giao dịch vừa nhận.
+
+### Vietcombank
+
+```yml
+gateways:
+  vietcombank_1:
+    type: 'VCBBANK'
+    enabled: true
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU'
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN'
+    bank_id: '970436'
+    device_id: 'DEVICE_ID_DA_XAC_THUC'
+    user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+    get_transaction_count_limit: 100
+```
+
+`device_id` và `user_agent` phải thuộc cùng trình duyệt đã được VCB xác thực.
+Service dùng cùng User-Agent cho captcha, login và lấy lịch sử.
+
+Lấy `device_id`:
+
+1. Bật User-Agent cần dùng trước khi mở VCB nếu đang giả User-Agent.
+2. Đăng nhập tại <https://vcbdigibank.vietcombank.com.vn/auth>.
+3. Hoàn tất OTP/Safe OTP nếu VCB yêu cầu.
+4. Chọn lưu trình duyệt.
+5. Ngay trên trang VCB, mở DevTools → Console và chạy:
+
+```js
+(async () => {
+  let vcbRequire;
+  window.webpackChunkremotes_authentication.push([
+    [Date.now()],
+    {},
+    (require) => {
+      vcbRequire = require;
+    },
+  ]);
+
+  await Promise.all([vcbRequire.e(4742), vcbRequire.e(5540)]);
+  const FingerprintJS = vcbRequire(65540);
+  const fingerprint = await FingerprintJS.load({ monitoring: false });
+  const { visitorId } = await fingerprint.get({});
+
+  console.log('VCB device_id:', visitorId);
+  prompt('VCB device_id - copy chuỗi này', visitorId);
+})().catch(console.error);
+```
+
+Module ID trên website VCB có thể thay đổi. Nếu script lỗi sau khi VCB cập nhật
+frontend, cần kiểm tra lại bundle của trang.
+
+Lỗi `20231` thường có nghĩa trình duyệt chưa được VCB xác thực, chưa được lưu,
+hoặc `device_id` không khớp `user_agent`.
+
+### TRON USDT
+
+```yml
+gateways:
+  tron_usdt_1:
+    type: 'TRON_USDT_BLOCKCHAIN'
+    account: 'DIA_CHI_VI_TRC20'
+    repeat_interval_in_sec: 30
+    get_transaction_day_limit: 14
+```
+
+### BEP20 USDT
+
+```yml
+gateways:
+  bep20_usdt_1:
+    type: 'BEP20_USDT_BLOCKCHAIN'
+    account: 'DIA_CHI_VI_BEP20'
+    password: 'ETHERSCAN_API_KEY'
+    repeat_interval_in_sec: 30
+    get_transaction_day_limit: 14
+    get_transaction_count_limit: 100
+```
+
+USDT được quy đổi sang VND theo dữ liệu Binance P2P. Nguồn tỷ giá bên ngoài có
+thể thay đổi hoặc tạm ngừng phản hồi.
 
 ## Proxy
-
-Hiện support các proxy có dạng host:port tĩnh, và có thể xoay thông qua url, vd mproxy.vn.
 
 ```yml
 proxies:
   proxy_1:
     schema: 'http'
-    ip: 'ip.mproxy.vn'
-    port: '12343'
-    username: 'username'
-    password: 'key-pass'
-    change_url: 'https://mproxy.vn/capi/token/key/key-pass/resetIp'
+    ip: '127.0.0.1'
+    port: '60000'
+    username: ''
+    password: ''
+    change_url: ''
     change_interval_in_sec: 1800
+
+gateways:
+  mb_bank_1:
+    type: 'MBBANK'
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU'
+    account: 'SO_TAI_KHOAN'
+    proxy: 'proxy_1'
+    repeat_interval_in_sec: 10
 ```
 
-## Hướng dẫn lấy device_id
+Nếu `change_url` có giá trị, service gọi URL này sau
+`change_interval_in_sec` để yêu cầu nhà cung cấp đổi IP.
 
-Cần lấy device_id của browser mà bạn đã từng login thành công. Việc này giúp hạn chế yêu cầu nhập lại OTP hoặc thực hiện xác thực khuôn mặt khi payment-service login.
+## Trang thanh toán VietQR
 
-### VCB
+Trang `/` gọi VietQR Quick Link theo mẫu:
 
-B1: Cho phép login từ trình duyệt
-
-Mở app vcb > quản lí đăng nhập kênh > Bật "cài đặt đăng nhập vcb trên web", Tắt "xác thực đăng nhập vcb trên web"
-
-B2: Mở trình duyệt, đăng nhập tại [https://vcbdigibank.vietcombank.com.vn/auth](https://vcbdigibank.vietcombank.com.vn/auth), xác nhận otp, khuân mặt (nếu có)
-
-B3: Vào <https://google.com/> > F12 > Console, chạy script sau để lấy device_id
-
-```js
-const fpPromise = import('https://openfpcdn.io/fingerprintjs/v3').then(
-  (FingerprintJS) => FingerprintJS.load(),
-);
-fpPromise
-  .then((fp) => fp.get())
-  .then((result) => {
-    const visitorId = result.visitorId;
-    document.write(visitorId);
-    console.log(visitorId);
-  });
+```text
+https://img.vietqr.io/image/<BANK_ID>-<ACCOUNT_NO>-qr_only.png
 ```
 
-### TP Bank
+Sau khi tạo QR, người dùng phải chuyển đúng số tiền và nội dung hiển thị. Nút
+**Tôi đã chuyển tiền** chạy tối đa theo ba biến:
 
-B1: Mở trình duyệt đã xác minh khuân mặt
-
-B2: Vào trang [https://ebank.tpb.vn/retail/vX/](https://ebank.tpb.vn/retail/vX/)
-
-B2: Bấm f12, tab console, paste đoạn code sau:
-
-```javascript
-localStorage.deviceId;
+```dotenv
+PAYMENT_CHECK_TIMEOUT_SEC=30
+PAYMENT_CHECK_INTERVAL_SEC=15
+PAYMENT_CHECK_MAX_ATTEMPTS=2
 ```
 
-## Bot
+Nếu lần kiểm tra đầu tiên chưa thấy giao dịch, service chờ và kiểm tra lại. Nếu
+gateway báo lỗi thật, yêu cầu trả về lỗi lấy lịch sử thay vì báo không tìm thấy.
 
-Thêm đoạn code như sau vào file `./config/config.yml`
+Mỗi lần quét ghi một log `PaymentCheck` gồm gateway, số lần thử, số giao dịch
+nhận được và trạng thái khớp. Log này không chứa mật khẩu, token hay nội dung
+giao dịch.
+
+## Admin dashboard
+
+Lần chạy đầu, service sinh:
+
+- Secret URL gồm 24 ký tự.
+- Mật khẩu gồm 18 ký tự.
+- Session secret.
+
+URL và mật khẩu được in trong terminal. File `.admin-data/admin.json` lưu secret
+path, salt/hash mật khẩu, session secret và thời điểm tạo; không lưu mật khẩu
+dạng rõ.
+
+Dashboard hỗ trợ:
+
+- Tổng quan gateway và giao dịch.
+- Trạng thái `idle`, `connecting`, `ready`, `scanning`, `error`, `disabled`.
+- Thêm, sửa, bật hoặc tắt gateway ngân hàng.
+- Nhập `device_id` cho TPBank/VCB.
+- Nhập `user_agent` khi thêm hoặc sửa VCB.
+- Tìm kiếm và lọc tối đa 500 giao dịch gần nhất.
+
+Session admin có hiệu lực 8 giờ. Sau năm lần nhập sai, IP bị chặn đăng nhập 15
+phút.
+
+Nếu quên mật khẩu:
+
+```bash
+rm .admin-data/admin.json
+```
+
+Sau đó khởi động lại service để sinh credential mới.
+
+BullMQ dashboard nằm tại:
+
+```text
+http://localhost:<PORT>/admin/queues
+```
+
+Route này hiện không dùng chung đăng nhập của admin dashboard. Không public trực
+tiếp ra Internet nếu chưa đặt reverse proxy/authentication ở phía trước.
+
+## Webhook
+
+```yml
+webhooks:
+  local_webhook:
+    url: 'http://localhost:4000/api/payment/callback'
+    token: 'local-secret'
+    conditions:
+      content_regex: '.*'
+      account_regex: '.*'
+```
+
+Webhook chỉ nhận giao dịch khớp cả hai regex. Job được BullMQ thử tối đa ba lần
+với exponential backoff.
+
+Payload:
+
+```json
+{
+  "token": "local-secret",
+  "payment": {
+    "transaction_id": "mbbank-FT26163080804748",
+    "amount": 50000,
+    "content": "PAYABC234XYZ",
+    "date": "2026-06-12T12:00:00.000Z",
+    "gate": "MBBANK",
+    "account_receiver": "0123456789"
+  }
+}
+```
+
+Khi app chạy trong Docker, `localhost` trong webhook URL là chính container
+app. Dùng hostname service cùng compose hoặc `host.docker.internal` nếu receiver
+chạy trên máy host.
+
+## Telegram
 
 ```yml
 bots:
-  notification_telegram_bot:
+  telegram_payment:
     type: 'TELEGRAM'
-    token: 'YOUR_TELEGRAM_BOT_TOKEN'
-    chat_chanel_id: '6862724379'
+    token: 'BOT_TOKEN'
+    chat_chanel_id: 'CHAT_ID'
     conditions:
-      content_regex: '.*?'
-      account_regex: '.*?'
-    # only support in telegram
-    # admin_ids can use /stopCron command
+      content_regex: '.*'
+      account_regex: '.*'
     admin_ids:
-      - '6862724379'
+      - 'TELEGRAM_USER_ID'
 ```
 
-| Field                       | Description                                                                                      | Example                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| `type`                      | Loại bot (`TELEGRAM` hoặc `DISCORD`).                                                            | `TELEGRAM`                                         |
-| `token`                     | Token của bot.                                                                                   | `YOUR_TELEGRAM_BOT_TOKEN`                          |
-| `chat_channel_id`           | ID của kênh chat mà bot sẽ gửi thông báo.                                                        | `6862724379`                                       |
-| `conditions`                | Điều kiện để bot gửi thông báo.                                                                  |                                                    |
-| &nbsp;&nbsp;`content_regex` | Regex kiểm tra nội dung tin nhắn.                                                                | `.*?` (chấp nhận mọi tin nhắn)                     |
-| &nbsp;&nbsp;`account_regex` | Regex kiểm tra số tài khoản trong tin nhắn.                                                      | `.*?` (chấp nhận mọi số tài khoản)                 |
-| `admin_ids`                 | Danh sách ID của người dùng có quyền sử dụng lệnh `/stopCron` để dừng bot (chỉ hỗ trợ Telegram). | `6862724379` (ID của người dùng có quyền dừng bot) |
+Tên field hiện tại là `chat_chanel_id` theo schema của project.
 
-### Telegram
+Các lệnh:
 
-#### **Step 1 - Tạo Telegram Bot**
+- `/chatid`: xem chat ID.
+- `/userid`: xem user ID.
+- `/stopCron`: dừng polling tất cả gateway 5 phút.
+- `/stopCron 10`: dừng polling 10 phút, tối đa 60 phút.
+- `/startCron`: bật lại polling.
 
-Tạo bot mới với [BotFather](https://t.me/BotFather) và copy token
+`/stopCron` và `/startCron` chỉ hoạt động với user nằm trong `admin_ids`.
 
-#### **Step 2 - Lấy chat id**
+Không đặt `SERVICE_DOMAIN` thì Telegram dùng polling. Nếu đặt domain, service
+đăng ký webhook:
 
-Dùng [Message Tool](https://irgendwr.github.io/TelegramAlert/message-tool) để tìm chatid của mình
+```text
+https://<SERVICE_DOMAIN>/bot/<BOT_TOKEN>
+```
 
-NOTE: Nếu muốn bot gửi tin nhắn vào group, hãy tắt privacy mode, và thêm bot vào group, cho phép bot có quyền gửi tin nhắn.
+Domain phải có HTTPS hợp lệ và trỏ được tới service.
 
-#### Step 3 - Cài đặt
+## Discord
+
+Tạo Discord webhook rồi tách URL:
+
+```text
+https://discord.com/api/webhooks/<WEBHOOK_ID>/<WEBHOOK_TOKEN>
+```
+
+Cấu hình:
 
 ```yml
 bots:
-  notification_telegram_bot:
-    type: 'TELEGRAM'
-    token: 'YOUR_TELEGRAM_BOT_TOKEN' # thay bằng token ở step 1
-    chat_chanel_id: '6862724379' # thay bằng chat id ở step 2
+  discord_payment:
+    type: 'DISCORD'
+    chat_chanel_id: 'WEBHOOK_ID'
+    token: 'WEBHOOK_TOKEN'
     conditions:
-      content_regex: '.*?'
-      account_regex: '.*?'
-    # only support in telegram
-    # admin_ids can use /stopCron command
-    admin_ids:
-      - '6862724379' # thay bằng user id ở step 2
-```
-
-### Bot discord
-
-Vào kênh cần nhận thông báo, tạo webhook, bấm sao chép url webhook
-
-```javascript
-https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_DISCORD_WEBHOOK_TOKEN
-```
-
-==> từ URL vừa copy trên discord, ta lấy được chatid và token.
-
-Chatid: `1189594424070639667`
-
-Token: `YOUR_DISCORD_WEBHOOK_TOKEN`
-
-```javascript
-bots: notification_discord_bot: type: 'DISCORD';
-token: 'YOUR_DISCORD_WEBHOOK_TOKEN';
-chat_chanel_id: '1189585904591982673';
-conditions: content_regex: '.*?';
-account_regex: '.*?';
-```
-
-## Stop
-
-Trong trường hợp bạn cần đăng nhập vào bank trên đt, mà payment-service cũng đăng nhập vào khiến bạn bị văng ra, thì hãy chat như sau với con bot tele, nó sẽ dừng 5p cho bạn có time chuyển tiền đi. Hoặc call api như sau
-
-```javascript
-http://localhost:3000/payments/stop-gate?name=mb_bank_1&time_in_sec=600
-```
-
-## Webhook cho web của bạn
-
-Với config sau
-
-```javascript
-webhooks: test_webhook: url: 'http://localhost:3001/api/payment/callback';
-token: '123456789:ABCDEF';
-conditions: content_regex: '.*?';
-account_regex: '.*?';
-```
-
-Server web sẽ nhận được
-
-```javascript
-const express = require('express');
-const app = express();
-app.use(express.json());
-
-app.post('/api/payment/callback', (req, res) => {
-  const data = req.body;
-  console.log(data); // token là do bạn config ở phần webhook, payment là thông tin giao dịch
-  //   {
-  //     token: '123456789:ABCDEF',
-  //     payment: {
-  //       transaction_id: 'tbbank-15401929546',
-  //       amount: 5000000,
-  //       content: 'nap 323523',
-  //       date: '2021-06-19T17:00:00.000Z',
-  //       account_receiver: '04381598888',
-  //       gate: 'TPBANK'
-  //     }
-  //   }
-  res.status(200).send('Data received');
-});
-app.listen(3001, () => {
-  console.log('Server running on port 3001');
-});
+      content_regex: '.*'
+      account_regex: '.*'
 ```
 
 ## API
 
-Lấy danh sách giao dịch: `http://localhost:3000/payments`
-Dừng service: `http://localhost:3000/payments/stop-gate?name=mb_bank_1&time_in_sec=600`
+### Payment
 
-## Tùy chọn thêm
+| Method | Route                              | Chức năng                                       |
+| ------ | ---------------------------------- | ----------------------------------------------- |
+| `GET`  | `/payments`                        | Danh sách payment đang lưu, tối đa 500 bản ghi. |
+| `GET`  | `/api/payment-requests/targets`    | Danh sách tài khoản đang bật cho trang VietQR.  |
+| `POST` | `/api/payment-requests`            | Tạo yêu cầu thanh toán.                         |
+| `GET`  | `/api/payment-requests/:id`        | Xem trạng thái yêu cầu.                         |
+| `POST` | `/api/payment-requests/:id/verify` | Lấy lịch sử và đối chiếu yêu cầu.               |
 
-## Mở rộng
+Tạo yêu cầu:
 
-- Thêm bất cứ loại giao dịch hay cổng thanh toán nào, emit event `payment.history-updated`
-- Lắng nghe có giao dịch mới, `@OnEvent("payment.created")`
-
-## Hướng dẫn đóng góp
-
-### Chạy dự án
-
-Khởi chạy redis và server giải captcha
-
-`docker-compose -f docker-compose.dev.yml up -d`
-
-Install package
-`pnpm install`
-
-Install playwright
-`pnpm playwright install`
-
-Tạo file .env
-
-```
-PORT=3001
-REDIS_HOST=localhost
-REDIS_PORT=6380
-CAPTCHA_API_BASE_URL=http://localhost:1234
-# If need disable sync payment data to redis
-# DISABLE_SYNC_REDIS=true
+```bash
+curl -X POST http://localhost:3001/api/payment-requests \
+  -H 'Content-Type: application/json' \
+  -d '{"amount":50000,"gatewayName":"mb_bank_1"}'
 ```
 
-Tạo file `config/config.yml`
+### Gateway
 
-```yml
-bots:
-webhooks:
-gateways:
-  your_bank_1:
-    type: 'YOUR_TYPE'
-    password: '--'
-    login_id: '--'
-    account: '--'
-    repeat_interval_in_sec: 20
+Dừng cron của một gateway trong số giây chỉ định:
+
+```bash
+curl 'http://localhost:3001/gateways/stop-gate?name=mb_bank_1&time_in_sec=600'
 ```
 
-Chạy `pnpm run start:dev`
+API này chỉ ảnh hưởng polling cron. Chế độ đối chiếu theo yêu cầu vẫn có thể gọi
+gateway trực tiếp.
 
-Lưu ý, các lịch sử giao dịch cũ sẽ được cache trong redis, để xoá chúng hãy làm bước sau:
+## Lệnh phát triển
 
-- Tắt app
-- Chạy lệnh `docker-compose exec redis redis-cli flushall`
-- Mở lại app
-
-### Thêm cổng thanh toán
-
-- Tạo thêm file mới `/gateways/gateway-factory/yourgateway.services.ts`
-
-```ts
-+ import { GateType, Payment } from '../gate.interface';
-+ import { Gate } from '../gates.services';
-+
-+ export class YourGatewayService extends Gate {
-+   async getHistory(): Promise<Payment[]> {
-+     // your code here
-+     return ...
-+   }
-+ }
+```bash
+pnpm start:dev
+pnpm build
+pnpm start:prod
+pnpm test
+pnpm test:e2e
+pnpm lint
+pnpm format
 ```
 
-- Sửa `src\gateways\gate.interface.ts`
+Build production:
 
-```ts
-export enum GateType {
-   MBBANK = 'MBBANK',
-+  YOUR_TYPE = 'YOUR_TYPE'
-}
+```bash
+pnpm build
+pnpm start:prod
 ```
 
-- Sửa factory gateway `src/gateways/gateway-factory/gate.factory.ts`
+## Xử lý lỗi thường gặp
 
-```ts
+### `pnpm: command not found`
 
-    switch (config.type) {
-+      case GateType.YOUR_TYPE:
-+        const yourbank = new YourGatewayService(config, eventEmitter, captchaSolver);
-+        return yourbank;
+```bash
+corepack enable
+corepack prepare pnpm@9.15.9 --activate
+hash -r
 ```
 
-- Cập nhật validate `src/gateways/gates-manager.services.ts`
+### Không kết nối được Docker daemon
 
-```ts
-      login_id: Joi.string().when('type', {
--       is: [GateType.ACBBANK, GateType.MBBANK, GateType.TPBANK],
-+       is: [GateType.ACBBANK, GateType.MBBANK, GateType.YOUR_TYPE],
-        then: Joi.required(),
-      }),
+Mở Docker Desktop, chờ engine chạy rồi kiểm tra:
+
+```bash
+docker info
 ```
 
-# Bản quyền
+Phần `Server` phải trả về thông tin daemon, không phải
+`Cannot connect to the Docker daemon`.
 
-- Mã nguồn của dịch vụ này được công khai, cho phép bất kỳ ai xem, sửa đổi, và cải thiện nó.
-- Được phép sử dụng vào mục đích thương mại: tạo cổng thanh toán cho website, thông báo giao dịch cho nhân viện của hàng,...
+### Captcha sai
 
-# Miễn trừ trách nhiệm
+Captcha solver có thể đọc sai ngẫu nhiên. MB Bank và ACB có cơ chế đăng nhập lại
+theo luồng riêng; tránh đặt chu kỳ quá ngắn vì có thể tạo nhiều lần đăng nhập.
 
-- **Miễn Trừ Trách Nhiệm Pháp Lý**: Người phát triển mã nguồn không chịu trách nhiệm pháp lý cho bất kỳ thiệt hại hay tổn thất nào xuất phát từ việc sử dụng hoặc không thể sử dụng dịch vụ.
+### ACB lần đầu không lấy được lịch sử
 
-- **Sử Dụng API Ngân Hàng Không Chính Thức**: Dịch vụ này hiện đang sử dụng các API của ngân hàng mà không có sự đồng ý chính thức từ các ngân hàng hoặc tổ chức tài chính liên quan. Do đó, người sáng lập và nhóm phát triển:
-  - Không chịu trách nhiệm cho bất kỳ vấn đề pháp lý hoặc hậu quả nào phát sinh từ việc sử dụng các API này.
-  - Không đảm bảo tính chính xác, độ tin cậy, hoặc tính sẵn có của dữ liệu lấy từ các API này.
-  - Khuyến cáo người dùng cần cân nhắc rủi ro pháp lý và an toàn thông tin khi sử dụng dịch vụ.
+Kiểm tra SafeKey và `.browser-data`. Khi session cũ hết hạn, bản hiện tại tự
+đăng nhập và retry lịch sử một lần.
 
-**Ghi Chú Quan Trọng:**
+### TPBank đã nhận tiền nhưng không xác minh được
 
-- Việc sử dụng các API không chính thức này có thể vi phạm các quy định pháp lý và chính sách của ngân hàng.
-- Chúng tôi khuyến khích người dùng và các bên liên quan cân nhắc kỹ lưỡng trước khi sử dụng dịch vụ này cho các mục đích tài chính hoặc thanh toán quan trọng.
-- Người dùng nên tham khảo ý kiến từ chuyên gia pháp lý hoặc tài chính trước khi đưa ra quyết định dựa trên dữ liệu hoặc dịch vụ được cung cấp qua dịch vụ này.
+Kiểm tra log `PaymentCheck`:
 
-# Những Người Đóng Góp
+- `payments: 0`: API chưa trả giao dịch hoặc đang truy vấn sai tài khoản.
+- `payments` lớn hơn `0` nhưng `matched: false`: kiểm tra số tiền, nội dung
+  `PAY...` và tài khoản nhận.
+- Nếu TPBank trả `401`, bản hiện tại tự đăng nhập lại và thử lấy lịch sử thêm một
+  lần.
 
-Dự án này không thể tồn tại mà không có sự hỗ trợ và cống hiến của cộng đồng. Xin chân thành cảm ơn tất cả những người đã đóng góp vào việc phát triển và cải thiện mã nguồn này.
-[@hungdentutuonglai](https://github.com/vuumanhhung) - Nâng cấp dự án + Tích hợp safekey ACB + Fix lỗi VCB + Custom dashboard admin + Custom index
+### VCB báo `20231`
 
-Special thanks to :
-[@ducmaster](https://gitlab.com/nhayhoc) - Bảo trì dự án
+Kiểm tra:
 
-[@chuanghiduoc](https://gitlab.com/chuanghiduoc) - Thêm cổng Tp bank
+- Đã xác thực và chọn lưu trình duyệt trên VCB.
+- `device_id` được lấy ngay trên trang VCB.
+- `user_agent` trong config giống User-Agent lúc xác thực.
+- Không đổi profile hoặc chế độ chống fingerprint sau khi lấy ID.
 
-[@TypicalShavonne](https://gitlab.com/TypicalShavonne) - Chỉnh sửa thông báo discord embed
+### Không thấy giao dịch
 
-[@amadeusmz](https://gitlab.com/amadeusmz) - Fix lỗi Tp bank
+Kiểm tra:
 
-[@chinhngocpro](https://gitlab.com/chinhngocpro) - Hỗ trợ multi proxy
+- Gateway đang bật và trạng thái không phải `error`.
+- Đúng tài khoản nhận.
+- Đúng số tiền và nội dung `PAY...`.
+- Giao dịch đã được ngân hàng ghi nhận.
+- Khoảng thời gian và số lần kiểm tra trong `.env`.
+- `get_transaction_day_limit` và `get_transaction_count_limit`.
+
+## Dữ liệu và bảo mật
+
+- `config/config.yml` chứa thông tin đăng nhập ngân hàng dạng rõ.
+- `.browser-data` chứa profile đăng nhập ACB.
+- `.admin-data` chứa hash mật khẩu và session secret admin.
+- Không đưa ba phần này lên repository hoặc public storage.
+- `/payments`, `/api/payment-requests`, `/gateways/stop-gate` và
+  `/admin/queues` hiện không có authentication riêng.
+- Không public các route vận hành hoặc dữ liệu nếu chưa có lớp bảo vệ bổ sung.
+- Nên giới hạn truy cập bằng firewall, VPN hoặc reverse proxy.
+- Sử dụng tài khoản ngân hàng phù hợp và theo dõi cảnh báo đăng nhập bất thường.
+
+Project hiện khai báo `UNLICENSED` trong `package.json`. Không mặc định suy diễn
+quyền phân phối, cấp phép lại hoặc sử dụng thương mại nếu chưa có sự cho phép
+phù hợp.
+
+## Miễn trừ trách nhiệm
+
+Các tích hợp ngân hàng trong project không phải API thanh toán chính thức.
+Người vận hành tự chịu trách nhiệm về bảo mật thông tin đăng nhập, tuân thủ điều
+khoản ngân hàng, pháp luật áp dụng, tính chính xác của đối chiếu và mọi rủi ro
+phát sinh khi triển khai.

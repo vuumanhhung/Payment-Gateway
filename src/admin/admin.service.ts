@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { GateConfig, GateType } from 'src/gateways/gate.interface';
+import {
+  DEFAULT_VCB_USER_AGENT,
+  GateConfig,
+  GateType,
+} from 'src/gateways/gate.interface';
 import { GatesManagerService } from 'src/gateways/gates-manager.services';
 import { PaymentConfigService } from 'src/payment-config/payment-config.services';
 import { PaymentService } from 'src/payments/payments.services';
@@ -19,7 +23,10 @@ type CreateBankInput = {
   accountName?: string;
   bankId?: string;
   deviceId?: string;
+  userAgent?: string;
 };
+
+type UpdateBankInput = Partial<Omit<CreateBankInput, 'name'>>;
 
 @Injectable()
 export class AdminService {
@@ -84,6 +91,7 @@ export class AdminService {
         bankId: gateway.bank_id || this.getDefaultBankId(gateway.type),
         maskedLoginId: this.maskValue(gateway.login_id),
         deviceIdConfigured: Boolean(gateway.device_id),
+        userAgent: gateway.user_agent || '',
         passwordConfigured: Boolean(gateway.password),
         status: this.gatesManagerService.getGateStatus(gateway.name),
       }));
@@ -108,6 +116,11 @@ export class AdminService {
         account_name: input.accountName || '',
         bank_id: input.bankId || this.getDefaultBankId(input.type),
         device_id: input.deviceId || undefined,
+        user_agent:
+          input.userAgent?.trim() ||
+          (input.type === GateType.VCBBANK
+            ? DEFAULT_VCB_USER_AGENT
+            : undefined),
         repeat_interval_in_sec: 10,
         get_transaction_day_limit: 14,
         get_transaction_count_limit: 100,
@@ -129,6 +142,49 @@ export class AdminService {
       { name, ...existing, enabled },
     ])[0];
     await this.paymentConfigService.setGatewayEnabled(name, enabled);
+    await this.gatesManagerService.applyGatewayConfig(config);
+    return this.getBank(name);
+  }
+
+  async updateBank(name: string, input: UpdateBankInput) {
+    const existing = await this.paymentConfigService.getGateway(name);
+    if (!existing) throw new NotFoundException('Không tìm thấy gateway');
+
+    const type = input.type || existing.type;
+    if (!this.supportedBankTypes.includes(type)) {
+      throw new BadRequestException('Ngân hàng không được hỗ trợ');
+    }
+
+    const config = this.gatesManagerService.validateBanksConfig([
+      {
+        name,
+        ...existing,
+        type,
+        enabled:
+          input.enabled === undefined
+            ? existing.enabled !== false
+            : input.enabled,
+        login_id: input.loginId?.trim() || existing.login_id,
+        password: input.password || existing.password,
+        account: input.account?.trim() || existing.account,
+        account_name:
+          input.accountName === undefined
+            ? existing.account_name
+            : input.accountName.trim(),
+        bank_id:
+          input.bankId?.trim() ||
+          existing.bank_id ||
+          this.getDefaultBankId(type),
+        device_id: input.deviceId?.trim() || existing.device_id,
+        user_agent:
+          input.userAgent?.trim() ||
+          existing.user_agent ||
+          (type === GateType.VCBBANK ? DEFAULT_VCB_USER_AGENT : undefined),
+      },
+    ])[0];
+
+    const { name: gatewayName, ...storedConfig } = config;
+    await this.paymentConfigService.upsertGateway(gatewayName, storedConfig);
     await this.gatesManagerService.applyGatewayConfig(config);
     return this.getBank(name);
   }

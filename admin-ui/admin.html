@@ -224,8 +224,8 @@
       <section class="modal" role="dialog" aria-modal="true">
         <div class="modal-heading">
           <div>
-            <p class="eyebrow">NEW BANK GATEWAY</p>
-            <h2>Thêm ngân hàng</h2>
+            <p class="eyebrow" id="bank-modal-eyebrow">NEW BANK GATEWAY</p>
+            <h2 id="bank-modal-title">Thêm ngân hàng</h2>
           </div>
           <button class="modal-close" id="close-bank-modal" type="button">
             ×
@@ -237,6 +237,7 @@
               Tên gateway
               <input
                 name="name"
+                id="bank-name"
                 placeholder="mb_bank_shop_1"
                 pattern="[a-zA-Z0-9_-]{3,50}"
                 required
@@ -253,12 +254,18 @@
             </label>
             <label>
               Tên đăng nhập
-              <input name="loginId" autocomplete="off" required />
+              <input
+                name="loginId"
+                id="bank-login-id"
+                autocomplete="off"
+                required
+              />
             </label>
             <label>
               Mật khẩu ngân hàng
               <input
                 name="password"
+                id="bank-password"
                 type="password"
                 autocomplete="new-password"
                 required
@@ -280,11 +287,15 @@
               Device ID
               <input name="deviceId" id="device-id" autocomplete="off" />
             </label>
+            <label class="form-grid-wide hidden" id="user-agent-field">
+              User-Agent trình duyệt VCB
+              <input name="userAgent" id="bank-user-agent" autocomplete="off" />
+            </label>
           </div>
           <label class="toggle-row">
             <input name="enabled" type="checkbox" checked />
             <span></span>
-            Bật và đăng nhập ngay sau khi thêm
+            <b id="bank-enabled-label">Bật và đăng nhập ngay sau khi thêm</b>
           </label>
           <p class="form-error hidden" id="bank-form-error"></p>
           <div class="modal-actions">
@@ -295,7 +306,13 @@
             >
               Hủy
             </button>
-            <button class="primary-action" type="submit">Lưu ngân hàng</button>
+            <button
+              class="primary-action"
+              id="bank-submit-button"
+              type="submit"
+            >
+              Lưu ngân hàng
+            </button>
           </div>
         </form>
       </section>

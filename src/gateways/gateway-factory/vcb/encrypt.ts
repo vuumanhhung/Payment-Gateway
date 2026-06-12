@@ -57,7 +57,17 @@ export class Encrypt {
       };
     }
   }
-  decryptResponse(m) {
+  decryptResponse(m: { k?: string; d?: string }) {
+    if (
+      !m ||
+      typeof m.k !== 'string' ||
+      typeof m.d !== 'string' ||
+      m.k.length === 0 ||
+      m.d.length === 0
+    ) {
+      throw new Error('VCB returned an invalid encrypted response');
+    }
+
     const { k: v, d: N } = m,
       A = forge.pki.privateKeyFromPem(this.clientPrivateKey),
       o = forge.util.decodeUtf8(A.decrypt(forge.util.decode64(v))),

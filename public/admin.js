@@ -6,6 +6,8 @@ const loginForm = document.querySelector('#login-form');
 const bankModal = document.querySelector('#bank-modal');
 const bankForm = document.querySelector('#bank-form');
 const toast = document.querySelector('#admin-toast');
+const defaultVcbUserAgent =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36';
 
 const pageMeta = {
   overview: ['TỔNG QUAN', 'Tổng quan hệ thống'],
@@ -16,6 +18,7 @@ const pageMeta = {
 let banks = [];
 let overview = null;
 let transactionSearchTimer;
+let editingBankName = null;
 
 async function api(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
@@ -149,14 +152,21 @@ function renderBanks() {
                     <p>${escapeHtml(bank.name)}</p>
                   </div>
                 </div>
-                <label class="switch" title="Bật hoặc tắt gateway">
-                  <input
-                    type="checkbox"
-                    data-bank-toggle="${escapeHtml(bank.name)}"
-                    ${bank.enabled ? 'checked' : ''}
-                  />
-                  <span></span>
-                </label>
+                <div class="bank-card-actions">
+                  <button
+                    class="edit-bank-button"
+                    type="button"
+                    data-bank-edit="${escapeHtml(bank.name)}"
+                  >Sửa</button>
+                  <label class="switch" title="Bật hoặc tắt gateway">
+                    <input
+                      type="checkbox"
+                      data-bank-toggle="${escapeHtml(bank.name)}"
+                      ${bank.enabled ? 'checked' : ''}
+                    />
+                    <span></span>
+                  </label>
+                </div>
               </div>
               <div class="bank-meta">
                 <div>
@@ -194,6 +204,11 @@ function renderBanks() {
 
   document.querySelectorAll('[data-bank-toggle]').forEach((input) => {
     input.addEventListener('change', () => toggleBank(input));
+  });
+  document.querySelectorAll('[data-bank-edit]').forEach((button) => {
+    button.addEventListener('click', () =>
+      openEditBankModal(button.dataset.bankEdit),
+    );
   });
 }
 
@@ -263,18 +278,79 @@ function setPage(page) {
 }
 
 function openBankModal() {
+  editingBankName = null;
+  bankForm.reset();
+  document.querySelector('#bank-modal-eyebrow').textContent =
+    'NEW BANK GATEWAY';
+  document.querySelector('#bank-modal-title').textContent = 'Thêm ngân hàng';
+  document.querySelector('#bank-submit-button').textContent = 'Lưu ngân hàng';
+  document.querySelector('#bank-name').readOnly = false;
+  document.querySelector('#bank-login-id').required = true;
+  document.querySelector('#bank-password').required = true;
+  document.querySelector('#bank-enabled-label').textContent =
+    'Bật và đăng nhập ngay sau khi thêm';
+  updateBankFields(true);
   document.querySelector('#bank-form-error').classList.add('hidden');
   bankModal.classList.remove('hidden');
   document.querySelector('#bank-form [name="name"]').focus();
 }
 
-function closeBankModal() {
-  bankModal.classList.add('hidden');
+function openEditBankModal(name) {
+  const bank = banks.find((item) => item.name === name);
+  if (!bank) {
+    showToast('Không tìm thấy ngân hàng');
+    return;
+  }
+
+  editingBankName = bank.name;
   bankForm.reset();
-  updateBankFields();
+  bankForm.elements.name.value = bank.name;
+  bankForm.elements.type.value = bank.type;
+  bankForm.elements.account.value = bank.account;
+  bankForm.elements.accountName.value = bank.accountName || '';
+  bankForm.elements.bankId.value = bank.bankId || '';
+  bankForm.elements.userAgent.value =
+    bank.userAgent || (bank.type === 'VCBBANK' ? defaultVcbUserAgent : '');
+  bankForm.elements.enabled.checked = bank.enabled;
+  document.querySelector('#bank-name').readOnly = true;
+  document.querySelector('#bank-login-id').required = false;
+  document.querySelector('#bank-password').required = false;
+  document.querySelector('#bank-login-id').placeholder =
+    'Để trống để giữ tên đăng nhập hiện tại';
+  document.querySelector('#bank-password').placeholder =
+    'Để trống để giữ mật khẩu hiện tại';
+  document.querySelector('#device-id').placeholder = bank.deviceIdConfigured
+    ? 'Để trống để giữ Device ID hiện tại'
+    : 'Nhập Device ID';
+  document.querySelector('#bank-modal-eyebrow').textContent =
+    'EDIT BANK GATEWAY';
+  document.querySelector('#bank-modal-title').textContent = `Sửa ${bankName(
+    bank.type,
+  )}`;
+  document.querySelector('#bank-submit-button').textContent = 'Lưu thay đổi';
+  document.querySelector('#bank-enabled-label').textContent =
+    'Bật gateway sau khi lưu';
+  document.querySelector('#bank-form-error').classList.add('hidden');
+  updateBankFields(false);
+  bankModal.classList.remove('hidden');
+  bankForm.elements.account.focus();
 }
 
-function updateBankFields() {
+function closeBankModal() {
+  bankModal.classList.add('hidden');
+  editingBankName = null;
+  bankForm.reset();
+  document.querySelector('#bank-name').readOnly = false;
+  document.querySelector('#bank-login-id').required = true;
+  document.querySelector('#bank-password').required = true;
+  document.querySelector('#bank-login-id').placeholder = '';
+  document.querySelector('#bank-password').placeholder = '';
+  document.querySelector('#device-id').placeholder = '';
+  document.querySelector('#bank-user-agent').placeholder = '';
+  updateBankFields(true);
+}
+
+function updateBankFields(setDefaultBankId = true) {
   const type = document.querySelector('#bank-type').value;
   const defaults = {
     MBBANK: '970422',
@@ -282,12 +358,24 @@ function updateBankFields() {
     TPBANK: '970423',
     VCBBANK: '970436',
   };
-  document.querySelector('#bank-id').value = defaults[type];
+  if (setDefaultBankId) {
+    document.querySelector('#bank-id').value = defaults[type];
+  }
   const requiresDevice = type === 'TPBANK' || type === 'VCBBANK';
+  const requiresUserAgent = type === 'VCBBANK';
   document
     .querySelector('#device-id-field')
     .classList.toggle('hidden', !requiresDevice);
-  document.querySelector('#device-id').required = requiresDevice;
+  document.querySelector('#device-id').required =
+    requiresDevice && !editingBankName;
+  document
+    .querySelector('#user-agent-field')
+    .classList.toggle('hidden', !requiresUserAgent);
+  const userAgentInput = document.querySelector('#bank-user-agent');
+  userAgentInput.required = requiresUserAgent;
+  if (requiresUserAgent && !userAgentInput.value.trim()) {
+    userAgentInput.value = defaultVcbUserAgent;
+  }
 }
 
 loginForm.addEventListener('submit', async (event) => {
@@ -323,22 +411,30 @@ bankForm.addEventListener('submit', async (event) => {
   submitButton.disabled = true;
 
   try {
-    await api('/banks', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: formData.get('name'),
-        type: formData.get('type'),
-        loginId: formData.get('loginId'),
-        password: formData.get('password'),
-        account: formData.get('account'),
-        accountName: formData.get('accountName'),
-        bankId: formData.get('bankId'),
-        deviceId: formData.get('deviceId'),
-        enabled: formData.get('enabled') === 'on',
-      }),
+    const payload = {
+      name: formData.get('name'),
+      type: formData.get('type'),
+      loginId: formData.get('loginId'),
+      password: formData.get('password'),
+      account: formData.get('account'),
+      accountName: formData.get('accountName'),
+      bankId: formData.get('bankId'),
+      deviceId: formData.get('deviceId'),
+      userAgent: formData.get('userAgent'),
+      enabled: formData.get('enabled') === 'on',
+    };
+    const editPath = `/banks/${encodeURIComponent(editingBankName || '')}`;
+    await api(editingBankName ? editPath : '/banks', {
+      method: editingBankName ? 'PATCH' : 'POST',
+      body: JSON.stringify(payload),
     });
+    const wasEditing = Boolean(editingBankName);
     closeBankModal();
-    showToast('Đã thêm ngân hàng. Hệ thống đang đăng nhập nền.');
+    showToast(
+      wasEditing
+        ? 'Đã cập nhật ngân hàng. Hệ thống đang đăng nhập lại.'
+        : 'Đã thêm ngân hàng. Hệ thống đang đăng nhập nền.',
+    );
     await refreshAll();
   } catch (error) {
     errorElement.textContent = error.message;
@@ -377,7 +473,7 @@ document
   .addEventListener('click', closeBankModal);
 document
   .querySelector('#bank-type')
-  .addEventListener('change', updateBankFields);
+  .addEventListener('change', () => updateBankFields(true));
 document.querySelector('#mobile-menu').addEventListener('click', () => {
   document.querySelector('.sidebar').classList.toggle('open');
 });

@@ -9,6 +9,16 @@ import { Gate } from '../gates.services';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { sleep } from 'src/shards/helpers/sleep';
 
+type TPBankTransaction = {
+  id?: string;
+  amount?: string | number;
+  description?: string;
+  creditDebitIndicator?: string;
+  bookingDate?: string;
+  transactionDate?: string;
+  valueDate?: string;
+};
+
 const API_BASE_URL = 'https://ebank.tpb.vn';
 const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/gateway/api/auth/login/v4/non-trust`,
@@ -43,6 +53,14 @@ export class TPBankService extends Gate {
   private deviceId: string;
 
   private clearAccessTokenTimeout: NodeJS.Timeout | null = null;
+
+  private clearAccessToken() {
+    this.accessToken = null;
+    if (this.clearAccessTokenTimeout) {
+      clearTimeout(this.clearAccessTokenTimeout);
+      this.clearAccessTokenTimeout = null;
+    }
+  }
 
   protected async prepareSession() {
     if (!this.accessToken) {
@@ -92,29 +110,33 @@ export class TPBankService extends Gate {
       );
       this.accessToken = response.data.access_token;
 
-      if (this.clearAccessTokenTimeout)
-        clearTimeout(this.clearAccessTokenTimeout);
-
-      this.clearAccessTokenTimeout = setTimeout(
-        () => {
-          this.accessToken = null;
-        },
-        (response.data.expires_in - 10) * 1000,
-      );
-
       if (!this.accessToken) {
-        console.log('Không có token');
-      } else {
-        console.log('Đã lấy được token');
+        throw new Error('TPBank login response does not contain access_token');
       }
+
+      if (this.clearAccessTokenTimeout) {
+        clearTimeout(this.clearAccessTokenTimeout);
+      }
+
+      const expiresIn = Number(response.data.expires_in);
+      if (Number.isFinite(expiresIn) && expiresIn > 10) {
+        this.clearAccessTokenTimeout = setTimeout(
+          () => this.clearAccessToken(),
+          (expiresIn - 10) * 1000,
+        );
+      }
+
+      console.log('TPBankService login success');
     } catch (error) {
-      console.error('Login failed:', error);
-      throw new Error('Login failed');
+      this.clearAccessToken();
+      const message =
+        error instanceof Error ? error.message : 'Unknown login error';
+      console.error(`TPBankService login failed: ${message}`);
+      throw new Error(`TPBank login failed: ${message}`);
     }
   }
 
-  async getHistory(): Promise<Payment[]> {
-    if (!this.accessToken) await this.login();
+  private async fetchHistory(): Promise<TPBankTransaction[]> {
     const fromDate = moment()
       .tz('Asia/Ho_Chi_Minh')
       .subtract(this.config.get_transaction_day_limit, 'days')
@@ -141,46 +163,103 @@ export class TPBankService extends Gate {
       keyword: '',
     };
 
+    const response = await axios.post(API_ENDPOINTS.TRANSACTIONS, dataSend, {
+      ...config,
+      httpsAgent: this.getAgent(),
+    });
+
+    return response.data.transactionInfos || [];
+  }
+
+  private parseTransactionDate(transaction: TPBankTransaction): Date {
+    const rawDate =
+      transaction.transactionDate ||
+      transaction.valueDate ||
+      transaction.bookingDate;
+    if (!rawDate) return new Date();
+
+    const parsed = moment.tz(rawDate, 'Asia/Ho_Chi_Minh');
+    if (!parsed.isValid()) return new Date();
+
+    const hasTime = /(?:T|\s)\d{1,2}:\d{2}/.test(rawDate);
+    const today = moment().tz('Asia/Ho_Chi_Minh');
+    if (!hasTime && parsed.isSame(today, 'day')) {
+      return today.toDate();
+    }
+
+    return parsed.toDate();
+  }
+
+  private mapTransactions(
+    transactionInfosList: TPBankTransaction[],
+  ): Payment[] {
+    return transactionInfosList
+      .filter(
+        (transactionInfo) =>
+          transactionInfo.creditDebitIndicator === 'CRDT',
+      )
+      .map((transactionInfo) => ({
+        transaction_id: 'tpbank-' + transactionInfo.id,
+        amount: Number(transactionInfo.amount),
+        content: transactionInfo.description || '',
+        date: this.parseTransactionDate(transactionInfo),
+        account_receiver: this.config.account,
+        gate: GateType.TPBANK,
+      }));
+  }
+
+  private getErrorStatus(error: unknown): number | undefined {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'response' in error &&
+      typeof error.response === 'object' &&
+      error.response !== null &&
+      'status' in error.response
+    ) {
+      return Number(error.response.status);
+    }
+    return undefined;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return 'Unknown transaction history error';
+  }
+
+  async getHistory(): Promise<Payment[]> {
+    if (!this.accessToken) await this.login();
+
     try {
-      const response = await axios.post(
-        API_ENDPOINTS.TRANSACTIONS,
-        dataSend,
-        { ...config, httpsAgent: this.getAgent() },
-      );
+      return this.mapTransactions(await this.fetchHistory());
+    } catch (firstError) {
+      if (this.getErrorStatus(firstError) === 401) {
+        this.clearAccessToken();
+        await this.login();
 
-      const transactionInfosList = response.data.transactionInfos || [];
-
-      // Lọc các giao dịch có creditDebitIndicator là 'CRDT'
-      const filteredTransactions = transactionInfosList.filter(
-        (transactionInfo) => transactionInfo.creditDebitIndicator === 'CRDT',
-      );
-      // Chuyển đổi các giao dịch đã lọc thành định dạng mới
-      const transactionsWithout = filteredTransactions.map(
-        (transactionInfos) => ({
-          transaction_id: 'tbbank-' + transactionInfos.id,
-          amount: Number(transactionInfos.amount),
-          content: transactionInfos.description,
-          date: moment
-            .tz(transactionInfos.bookingDate, 'YYYY-MM-DD', 'Asia/Ho_Chi_Minh')
-            .toDate(),
-          account_receiver: this.config.account,
-          gate: GateType.TPBANK,
-        }),
-      );
-      return transactionsWithout;
-    } catch (error) {
-      console.error('Error while fetching transaction history:', error);
-      if (error.response) {
-        console.error('Error response:', error.response.data);
+        try {
+          return this.mapTransactions(await this.fetchHistory());
+        } catch (retryError) {
+          this.clearAccessToken();
+          console.error(
+            `TPBank transaction history failed after re-login: ${this.getErrorMessage(
+              retryError,
+            )}`,
+          );
+          throw new Error('Error while fetching transaction history');
+        }
       }
+
+      const message = this.getErrorMessage(firstError);
+      console.error(`TPBank transaction history failed: ${message}`);
       if (
-        error.message.includes(
+        message.includes(
           'Client network socket disconnected before secure TLS connection was established',
         )
       ) {
         await sleep(10000);
       } else {
-        this.accessToken = null;
+        this.clearAccessToken();
       }
 
       throw new Error('Error while fetching transaction history');

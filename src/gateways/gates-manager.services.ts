@@ -109,6 +109,7 @@ export class GatesManagerService implements OnApplicationBootstrap {
         is: [GateType.VCBBANK, GateType.TPBANK],
         then: Joi.required(),
       }),
+      user_agent: Joi.string().max(500).allow(''),
       token: Joi.string(),
       account: Joi.string().required(),
       account_name: Joi.string().max(50).allow(''),

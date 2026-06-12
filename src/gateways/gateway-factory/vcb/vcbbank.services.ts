@@ -4,13 +4,22 @@ import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import * as moment from 'moment-timezone';
 
-import { GateType, Payment } from '../../gate.interface';
+import {
+  DEFAULT_VCB_USER_AGENT,
+  GateType,
+  Payment,
+} from '../../gate.interface';
 import { Gate } from '../../gates.services';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { sleep } from 'src/shards/helpers/sleep';
 import { VCBLoginDto, TransactionDto } from './vcb.bank.type';
 import { Encrypt } from './encrypt';
 import { axios } from 'src/shards/helpers/axios';
+
+interface VCBResponse {
+  code?: string;
+  des?: string;
+}
 
 @Injectable()
 export class VCBBankService extends Gate {
@@ -19,6 +28,44 @@ export class VCBBankService extends Gate {
   private cif: string | null = null;
   private mobileId: string | null = null;
   private clientId: string | null = null;
+
+  private getUserAgent() {
+    return this.config.user_agent?.trim() || DEFAULT_VCB_USER_AGENT;
+  }
+
+  private getBrowserMetadata() {
+    const userAgent = this.getUserAgent();
+    const edge = userAgent.match(/Edg\/([\d.]+)/);
+    const chrome = userAgent.match(/(?:Chrome|CriOS)\/([\d.]+)/);
+    const firefox = userAgent.match(/(?:Firefox|FxiOS)\/([\d.]+)/);
+    const safari = userAgent.match(/Version\/([\d.]+).*Safari/);
+
+    let browserName = 'Chrome';
+    let browserVersion = chrome?.[1] || '';
+    if (edge) {
+      browserName = 'Microsoft Edge';
+      browserVersion = edge[1];
+    } else if (firefox) {
+      browserName = 'Firefox';
+      browserVersion = firefox[1];
+    } else if (safari) {
+      browserName = 'Safari';
+      browserVersion = safari[1];
+    }
+
+    let deviceType = 'WINDOWS_WEB';
+    if (/Macintosh|Mac OS X/i.test(userAgent)) {
+      deviceType = 'MACOS_WEB';
+    } else if (/Linux/i.test(userAgent) && !/Android/i.test(userAgent)) {
+      deviceType = 'LINUX_WEB';
+    }
+
+    return {
+      DT: deviceType,
+      PM: browserName,
+      OV: browserVersion,
+    };
+  }
 
   protected async prepareSession() {
     if (!this.sessionId) {
@@ -42,7 +89,7 @@ export class VCBBankService extends Gate {
     });
   }
 
-  private async makeRequest<T>(path: string, body: any) {
+  private async makeRequest<T extends VCBResponse>(path: string, body: any) {
     const { data } = await axios.post(
       'https://digiapp.vietcombank.com.vn' + path,
       this.encrypt.encryptRequest(body),
@@ -53,8 +100,7 @@ export class VCBBankService extends Gate {
             String(parseInt((100 * Math.random()).toString())),
           'X-Channel': 'Web',
           'X-Lim-ID': this.encrypt.sha256(this.config.login_id + '1236q93-@u9'),
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.5666.197 Safari/537.36',
+          'User-Agent': this.getUserAgent(),
           Accept: 'application/json',
           'Accept-Language': 'vi',
           'Content-Type': 'application/json',
@@ -63,8 +109,15 @@ export class VCBBankService extends Gate {
         httpsAgent: this.getAgent(),
       },
     );
-    return JSON.parse(this.encrypt.decryptResponse(data)) as T;
+
+    try {
+      return JSON.parse(this.encrypt.decryptResponse(data)) as T;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`VCB response error for ${path}: ${message}`);
+    }
   }
+
   private async login() {
     // get captcha image and convert to base64
     const captchaToken = uuidv4();
@@ -74,8 +127,7 @@ export class VCBBankService extends Gate {
       {
         responseType: 'arraybuffer',
         headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+          'User-Agent': this.getUserAgent(),
           Referer: 'https://vcbdigibank.vietcombank.com.vn/',
         },
       },
@@ -100,9 +152,7 @@ export class VCBBankService extends Gate {
         lang: 'vi',
         E: null,
         sessionId: null,
-        DT: 'Windows',
-        PM: 'Chrome 126.0.0.0',
-        OV: '10',
+        ...this.getBrowserMetadata(),
         appVersion: '',
       },
     );
@@ -111,7 +161,19 @@ export class VCBBankService extends Gate {
       this.cif = loginRes.userInfo?.cif;
       this.mobileId = loginRes.userInfo?.mobileId;
       this.clientId = loginRes.userInfo?.clientId;
+      return;
     }
+
+    const description = loginRes.des || 'Unknown login error';
+    const deviceHint =
+      loginRes.code === '20231'
+        ? '. device_id chưa được VCB xác thực; lấy lại device_id ngay trên trang VCB theo hướng dẫn trong README'
+        : '';
+    throw new Error(
+      `VCB login failed (${
+        loginRes.code || 'UNKNOWN'
+      }): ${description}${deviceHint}`,
+    );
   }
 
   async getHistory(): Promise<Payment[]> {
@@ -142,12 +204,21 @@ export class VCBBankService extends Gate {
           browserId: this.config.device_id,
           E: null,
           sessionId: this.sessionId,
-          DT: 'Windows',
-          PM: 'Chrome 126.0.0.0',
-          OV: '10',
+          ...this.getBrowserMetadata(),
           appVersion: '',
         },
       );
+
+      if (data.code !== '00') {
+        throw new Error(
+          `VCB transaction history failed (${data.code || 'UNKNOWN'}): ${
+            data.des || 'Unknown error'
+          }`,
+        );
+      }
+      if (!Array.isArray(data.transactions)) {
+        throw new Error('VCB transaction history response has no transactions');
+      }
 
       // PostingDate: '2024-06-28',
       // PostingTime: '050359',
@@ -187,6 +258,9 @@ export class VCBBankService extends Gate {
         this.sessionId = null;
       }
 
+      if (error instanceof Error) {
+        throw error;
+      }
       throw new Error('Error while fetching transaction history');
     }
   }

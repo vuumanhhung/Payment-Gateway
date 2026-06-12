@@ -1,7 +1,5 @@
-import { TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GateType, GateConfig } from '../gate.interface';
-import * as moment from 'moment-timezone';
 import { ACBBankService } from './acbbank.services';
 import { CaptchaSolverService } from 'src/captcha-solver/captcha-solver.service';
 import { ProxyService } from 'src/proxy/proxy.service';
@@ -9,7 +7,6 @@ import { ProxyService } from 'src/proxy/proxy.service';
 // TODO: write tests here
 describe('ACBBankService', () => {
   let service: ACBBankService;
-  let module: TestingModule;
 
   const mockConfig: GateConfig = {
     type: GateType.ACBBANK,
@@ -46,7 +43,10 @@ describe('ACBBankService', () => {
     service['cron'] = jest.fn();
   });
 
-  afterEach(async () => {});
+  afterEach(async () => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
 
   describe('parseAcbHistory', () => {
     it('should correctly parse specific transaction with content "DO HUYNH DUC CHUYEN TIEN"', () => {
@@ -464,6 +464,53 @@ function changeVA(){
 
       const result = service.parseAcbHistory(html);
       expect(result).toHaveLength(0);
+    });
+
+    it('reports an expired session when the history table is missing', () => {
+      expect(() =>
+        service.parseAcbHistory('<html><body>Login</body></html>'),
+      ).toThrow(
+        'ACB transaction history table was not found; the session may have expired',
+      );
+    });
+  });
+
+  describe('getHistory', () => {
+    it('logs in again and retries when the ACB session has expired', async () => {
+      jest.useFakeTimers();
+      const warning = jest.spyOn(console, 'warn').mockImplementation();
+      const request = jest
+        .fn()
+        .mockResolvedValueOnce('<html><body>Login</body></html>')
+        .mockResolvedValueOnce(`
+          <table id="table1">
+            <tbody>
+              <tr><th>Header</th></tr>
+            </tbody>
+          </table>
+        `);
+      service['request'] = request as any;
+      service['dse_sessionId'] = 'expired-session';
+      service['dse_processorId'] = 'expired-processor';
+      const login = jest
+        .spyOn(service, 'login')
+        .mockImplementation(async () => {
+          service['request'] = request as any;
+          service['dse_sessionId'] = 'new-session';
+          service['dse_processorId'] = 'new-processor';
+        });
+
+      const historyPromise = service.getHistory();
+      await jest.advanceTimersByTimeAsync(1000);
+      const result = await historyPromise;
+
+      expect(result).toEqual([]);
+      expect(login).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request.mock.calls[1][0].form.dse_sessionId).toBe('new-session');
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining('refreshing session'),
+      );
     });
   });
 
