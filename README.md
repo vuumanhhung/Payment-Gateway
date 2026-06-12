@@ -557,6 +557,138 @@ webhooks:
 Webhook chỉ nhận giao dịch khớp cả hai regex. Job được BullMQ thử tối đa ba lần
 với exponential backoff.
 
+### Chạy webhook receiver thử nghiệm bằng Node.js
+
+Đoạn lệnh dưới đây tạo một HTTP server đơn giản để nhận webhook, in body ra
+terminal và trả về HTTP `200 OK`. Đây chỉ là receiver dùng để kiểm tra local,
+không lưu dữ liệu và không nên dùng làm endpoint production.
+
+Khi Payment Gateway chạy bằng `pnpm`:
+
+1. Giữ nguyên terminal đang chạy `pnpm start` hoặc `pnpm start:dev`.
+2. Mở một terminal thứ hai. Có thể chạy ở bất kỳ thư mục nào miễn máy đã cài
+   Node.js.
+3. Chạy:
+
+```bash
+node -e "
+const http = require('http');
+
+http.createServer((req, res) => {
+  let body = '';
+
+  req.on('data', (data) => body += data);
+  req.on('end', () => {
+    console.log('WEBHOOK:', body);
+    res.writeHead(200);
+    res.end('OK');
+  });
+}).listen(4000, '0.0.0.0', () => {
+  console.log('Listening on port 4000');
+});
+"
+```
+
+Giữ terminal này mở. Dừng receiver bằng `Ctrl+C`.
+
+Với app chạy trực tiếp trên máy, cấu hình URL:
+
+```yml
+webhooks:
+  local_webhook:
+    url: 'http://localhost:4000/api/payment/callback'
+    token: 'local-secret'
+    conditions:
+      content_regex: '.*'
+      account_regex: '.*'
+```
+
+Receiver trên chấp nhận mọi path, nên `/api/payment/callback` chỉ dùng để mô
+phỏng URL callback thật.
+
+Kiểm tra receiver độc lập:
+
+```bash
+curl -i -X POST http://localhost:4000/api/payment/callback \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"local-secret","payment":{"amount":20000,"content":"PAYTEST"}}'
+```
+
+Terminal receiver phải hiện:
+
+```text
+WEBHOOK: {"token":"local-secret","payment":{"amount":20000,"content":"PAYTEST"}}
+```
+
+### App chạy trong Docker, receiver chạy trên máy host
+
+Trên macOS hoặc Windows dùng Docker Desktop:
+
+1. Chạy đoạn `node -e` ở trên trong một terminal trên máy host.
+2. Đổi webhook URL trong `config/config.yml` thành:
+
+```yml
+url: 'http://host.docker.internal:4000/api/payment/callback'
+```
+
+3. Khởi động lại app để nạp lại cấu hình webhook:
+
+```bash
+docker compose restart app
+docker compose logs -f app
+```
+
+`localhost` bên trong container là chính container `app`, không phải máy Mac.
+`host.docker.internal` là hostname Docker Desktop dùng để gọi ngược về máy host.
+
+Trên Linux, thêm mapping sau vào service `app` trong `docker-compose.yml` nếu
+hostname trên chưa có:
+
+```yml
+services:
+  app:
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+```
+
+Sau đó tạo lại container:
+
+```bash
+docker compose up -d --build
+```
+
+### Chạy cả webhook receiver bằng Docker
+
+Có thể chạy receiver trong một container riêng và publish port `4000`:
+
+```bash
+docker run --rm -it \
+  --name webhook-receiver \
+  -p 4000:4000 \
+  node:20-alpine \
+  node -e "
+const http = require('http');
+http.createServer((req, res) => {
+  let body = '';
+  req.on('data', (data) => body += data);
+  req.on('end', () => {
+    console.log('WEBHOOK:', body);
+    res.writeHead(200);
+    res.end('OK');
+  });
+}).listen(4000, '0.0.0.0', () => console.log('Listening on port 4000'));
+"
+```
+
+Nếu Payment Gateway cũng chạy trong Docker Desktop, vẫn dùng:
+
+```yml
+url: 'http://host.docker.internal:4000/api/payment/callback'
+```
+
+Xem log receiver ngay trong terminal chạy `docker run`. Dừng và xóa container
+bằng `Ctrl+C`; tùy chọn `--rm` sẽ tự xóa container sau khi dừng.
+
 Payload:
 
 ```json
@@ -573,9 +705,9 @@ Payload:
 }
 ```
 
-Khi app chạy trong Docker, `localhost` trong webhook URL là chính container
-app. Dùng hostname service cùng compose hoặc `host.docker.internal` nếu receiver
-chạy trên máy host.
+Nếu receiver được khai báo thành một service trong cùng `docker-compose.yml`,
+dùng tên service làm hostname, ví dụ
+`http://webhook-receiver:4000/api/payment/callback`.
 
 ## Telegram
 
