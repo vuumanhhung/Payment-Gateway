@@ -1,0 +1,72 @@
+bots:
+  test_telegram_bot:
+    type: 'TELEGRAM'
+    token: '--'
+    chat_chanel_id: '222'
+    conditions:
+      content_regex: '.*?'
+      account_regex: '.*?'
+    # only support in telegram
+    # admin_ids can use /stopCron command
+    admin_ids:
+      - '5877655134'
+  test_discord_bot:
+    type: 'DISCORD'
+    token: '--'
+    chat_chanel_id: '111'
+    conditions:
+      content_regex: '.*?'
+      account_regex: '.*?'
+webhooks:
+  test_webhook:
+    url: 'http://localhost:4000/api/payment/callback'
+    token: 'local-secret'
+    conditions:
+      content_regex: '.*?'
+      account_regex: '^456$'
+proxies:
+  proxy_1:
+    schema: 'http'
+    ip: '127.0.0.1'
+    port: '60000'
+    username: ''
+    password: ''
+    change_url: ''
+    change_interval_in_sec: 1800
+  proxy_2:
+    schema: 'https'
+    ip: '0.0.0.0'
+    port: '11222'
+    username: 'proxyusername'
+    password: 'proxypass'
+    change_url: ''
+    change_interval_in_sec: 1800
+
+gateways:
+  tp_bank_1:
+    type: 'TPBANK'
+    password: 'MAT_KHAU_DANG_NHAP'
+    account: 'SO_TAI_KHOAN'
+    login_id: 'TEN_DANG_NHAP'
+    device_id: 'abcxyz'
+    repeat_interval_in_sec: 30
+    proxy: 'proxy_1'
+    get_transaction_day_limit: 7
+    get_transaction_count_limit: 10
+  mb_bank_1:
+    type: 'MBBANK'
+    password: 'MAT_KHAU_DANG_NHAP'
+    account: 'SO_TAI_KHOAN'
+    login_id: 'TEN_DANG_NHAP'
+    repeat_interval_in_sec: 10
+    proxy: 'proxy_1'
+  abc_bank_1:
+    type: 'ACBBANK'
+    password: 'MAT_KHAU_DANG_NHAP'
+    account: 'SO_TAI_KHOAN'
+    login_id: 'TEN_DANG_NHAP'
+    repeat_interval_in_sec: 10
+  tron_usdt_1:
+    type: 'TRON_USDT_BLOCKCHAIN'
+    account: 'DIA_CHI_VI'
+    repeat_interval_in_sec: 10
