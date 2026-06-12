@@ -552,7 +552,9 @@ export enum GateType {
 # Những Người Đóng Góp
 
 Dự án này không thể tồn tại mà không có sự hỗ trợ và cống hiến của cộng đồng. Xin chân thành cảm ơn tất cả những người đã đóng góp vào việc phát triển và cải thiện mã nguồn này.
+[@hungdentutuonglai](https://github.com/vuumanhhung) - Nâng cấp dự án + Tích hợp safekey ACB + Fix lỗi VCB + Custom dashboard admin + Custom index
 
+Special thanks to :
 [@ducmaster](https://gitlab.com/nhayhoc) - Bảo trì dự án
 
 [@chuanghiduoc](https://gitlab.com/chuanghiduoc) - Thêm cổng Tp bank
