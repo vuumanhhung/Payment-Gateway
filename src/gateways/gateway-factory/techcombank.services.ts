@@ -89,12 +89,20 @@ export class TechcombankService extends Gate {
   }
 
   private async performLogin() {
+    this.logLogin(
+      `Launching browser session (headless=${this.isHeadless()}, has_credentials=${this.hasLoginCredentials()})`,
+    );
     const page = await this.ensurePage();
 
+    this.logLogin('Opening Techcombank login flow...');
     await page.goto(TECHCOMBANK_DASHBOARD_URL, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000,
+      waitUntil: 'commit',
+      timeout: 45000,
     });
+    await page
+      .waitForLoadState('domcontentloaded', { timeout: 15000 })
+      .catch(() => undefined);
+    this.logLogin(`Current URL: ${this.getSafeUrl(page.url())}`);
 
     if (await this.hasAccessToken()) {
       console.log('TechcombankService login success');
@@ -103,6 +111,7 @@ export class TechcombankService extends Gate {
 
     if (await this.isLoginFormVisible()) {
       if (this.hasLoginCredentials()) {
+        this.logLogin('Login form detected, submitting saved credentials...');
         await this.submitLoginForm();
         console.log(
           'TechcombankService submitted login, approve the request in Techcombank Mobile...',
@@ -118,6 +127,10 @@ export class TechcombankService extends Gate {
           'Complete Techcombank login in the opened Chromium window, then approve in Techcombank Mobile...',
         );
       }
+    } else {
+      this.logLogin(
+        'Login form was not detected yet; waiting for session token or redirect...',
+      );
     }
 
     try {
@@ -139,6 +152,7 @@ export class TechcombankService extends Gate {
     }
 
     await this.closeBrowser();
+    this.logLogin(`Using browser data: ${this.getBrowserDataDir()}`);
     this.context = await playwright.chromium.launchPersistentContext(
       this.getBrowserDataDir(),
       {
@@ -150,6 +164,7 @@ export class TechcombankService extends Gate {
           width: 1365,
           height: 768,
         },
+        args: ['--disable-blink-features=AutomationControlled'],
         proxy: this.getChromProxy(),
       },
     );
@@ -217,15 +232,23 @@ export class TechcombankService extends Gate {
       .locator('#password, input[name="password"]')
       .first()
       .fill(this.config.password);
-    await page.locator('#kc-login, input[name="login"]').first().click();
-    await page
-      .waitForLoadState('domcontentloaded', { timeout: 10000 })
-      .catch(() => undefined);
+    const [, clickResult] = await Promise.allSettled([
+      page.waitForNavigation({ waitUntil: 'commit', timeout: 15000 }),
+      page.locator('#kc-login, input[name="login"]').first().click({
+        timeout: 15000,
+      }),
+    ]);
+    if (clickResult.status === 'rejected') {
+      throw clickResult.reason;
+    }
+    await page.waitForTimeout(1000);
+    this.logLogin(`After submit URL: ${this.getSafeUrl(page.url())}`);
   }
 
   private async waitForLoginCompletion(timeout: number) {
     const page = await this.ensurePage();
     const deadline = Date.now() + timeout;
+    let lastLogAt = 0;
 
     while (Date.now() < deadline) {
       if (await this.hasAccessToken()) return;
@@ -237,6 +260,19 @@ export class TechcombankService extends Gate {
       const loginError = this.extractLoginError(text);
       if (loginError) {
         throw new Error(loginError);
+      }
+
+      if (Date.now() - lastLogAt > 15000) {
+        lastLogAt = Date.now();
+        const secondsLeft = Math.max(
+          0,
+          Math.ceil((deadline - Date.now()) / 1000),
+        );
+        this.logLogin(
+          `Waiting for Techcombank Mobile approval/session token... (${secondsLeft}s left, url=${this.getSafeUrl(
+            page.url(),
+          )})`,
+        );
       }
 
       await page.waitForTimeout(1000);
@@ -492,6 +528,19 @@ export class TechcombankService extends Gate {
 
   private normalizeAccount(value?: string) {
     return String(value || '').replace(/\D/g, '');
+  }
+
+  private logLogin(message: string) {
+    console.log(`TechcombankService ${message}`);
+  }
+
+  private getSafeUrl(url: string) {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.origin}${parsed.pathname}`;
+    } catch {
+      return url.split('?')[0];
+    }
   }
 
   async getHistory(): Promise<Payment[]> {
