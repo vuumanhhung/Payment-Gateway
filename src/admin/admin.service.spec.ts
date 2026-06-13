@@ -120,6 +120,39 @@ describe('AdminService', () => {
     );
   });
 
+  it('creates a Techcombank gateway without login credentials', async () => {
+    paymentConfigService.getGateway.mockResolvedValue(undefined);
+    paymentConfigService.getConfigPath.mockResolvedValue([
+      {
+        name: 'techcombank_1',
+        type: GateType.TECHCOMBANK,
+        enabled: true,
+        account: '1234567890',
+        account_name: 'VU MANH HUNG',
+        bank_id: '970407',
+        repeat_interval_in_sec: 10,
+        get_transaction_day_limit: 14,
+        get_transaction_count_limit: 100,
+      },
+    ]);
+
+    await service.createBank({
+      name: 'techcombank_1',
+      type: GateType.TECHCOMBANK,
+      account: '1234567890',
+      accountName: 'VU MANH HUNG',
+    });
+
+    expect(paymentConfigService.upsertGateway).toHaveBeenCalledWith(
+      'techcombank_1',
+      expect.objectContaining({
+        type: GateType.TECHCOMBANK,
+        bank_id: '970407',
+        account: '1234567890',
+      }),
+    );
+  });
+
   it('rejects an unknown gateway', async () => {
     paymentConfigService.getGateway.mockResolvedValue(undefined);
 

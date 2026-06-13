@@ -357,12 +357,25 @@ function updateBankFields(setDefaultBankId = true) {
     ACBBANK: '970416',
     TPBANK: '970423',
     VCBBANK: '970436',
+    TECHCOMBANK: '970407',
   };
   if (setDefaultBankId) {
     document.querySelector('#bank-id').value = defaults[type];
   }
   const requiresDevice = type === 'TPBANK' || type === 'VCBBANK';
   const requiresUserAgent = type === 'VCBBANK';
+  const requiresCredentials = type !== 'TECHCOMBANK';
+  const loginInput = document.querySelector('#bank-login-id');
+  const passwordInput = document.querySelector('#bank-password');
+  loginInput.required = requiresCredentials && !editingBankName;
+  passwordInput.required = requiresCredentials && !editingBankName;
+  if (type === 'TECHCOMBANK') {
+    loginInput.placeholder = 'Không bắt buộc, đăng nhập trong browser';
+    passwordInput.placeholder = 'Không bắt buộc, đăng nhập trong browser';
+  } else if (!editingBankName) {
+    loginInput.placeholder = '';
+    passwordInput.placeholder = '';
+  }
   document
     .querySelector('#device-id-field')
     .classList.toggle('hidden', !requiresDevice);
@@ -519,6 +532,7 @@ function bankName(type) {
       ACBBANK: 'ACB',
       TPBANK: 'TPBank',
       VCBBANK: 'Vietcombank',
+      TECHCOMBANK: 'Techcombank',
     }[type] || type
   );
 }
@@ -530,6 +544,7 @@ function bankShortName(type) {
       ACBBANK: 'ACB',
       TPBANK: 'TP',
       VCBBANK: 'VCB',
+      TECHCOMBANK: 'TCB',
     }[type] || '?'
   );
 }

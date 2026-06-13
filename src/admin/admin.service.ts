@@ -17,8 +17,8 @@ type CreateBankInput = {
   name: string;
   type: GateType;
   enabled?: boolean;
-  loginId: string;
-  password: string;
+  loginId?: string;
+  password?: string;
   account: string;
   accountName?: string;
   bankId?: string;
@@ -35,6 +35,7 @@ export class AdminService {
     GateType.MBBANK,
     GateType.TPBANK,
     GateType.VCBBANK,
+    GateType.TECHCOMBANK,
   ];
 
   constructor(
@@ -110,8 +111,8 @@ export class AdminService {
         name: input.name,
         type: input.type,
         enabled: input.enabled !== false,
-        login_id: input.loginId,
-        password: input.password,
+        login_id: input.loginId?.trim() || undefined,
+        password: input.password || undefined,
         account: input.account,
         account_name: input.accountName || '',
         bank_id: input.bankId || this.getDefaultBankId(input.type),
@@ -221,6 +222,7 @@ export class AdminService {
       [GateType.ACBBANK]: '970416',
       [GateType.TPBANK]: '970423',
       [GateType.VCBBANK]: '970436',
+      [GateType.TECHCOMBANK]: '970407',
     }[type];
   }
 

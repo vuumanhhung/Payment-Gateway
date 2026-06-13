@@ -30,6 +30,10 @@ import { AdminModule } from './admin/admin.module';
         DISABLE_SYNC_REDIS: Joi.string().optional(),
         GATEWAY_AUTO_CRON: Joi.string().valid('true', 'false').default('false'),
         GATEWAY_PRELOGIN: Joi.string().valid('true', 'false').default('true'),
+        TECHCOMBANK_HEADLESS: Joi.string()
+          .valid('true', 'false')
+          .default('false'),
+        TECHCOMBANK_LOGIN_TIMEOUT_MS: Joi.number().min(1000).optional(),
         PAYMENT_CHECK_TIMEOUT_SEC: Joi.number().min(1).max(300).default(30),
         PAYMENT_CHECK_INTERVAL_SEC: Joi.number().min(1).max(30).default(15),
         PAYMENT_CHECK_MAX_ATTEMPTS: Joi.number().min(1).max(10).default(2),

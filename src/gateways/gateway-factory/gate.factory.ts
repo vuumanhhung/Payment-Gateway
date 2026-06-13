@@ -9,6 +9,7 @@ import { ProxyService } from '../../proxy/proxy.service';
 import { TronUsdtBlockchainService } from './usdt-blockchain/tron-usdt-blockchain.services';
 import { VCBBankService } from './vcb/vcbbank.services';
 import { Bep20UsdtBlockchainService } from './usdt-blockchain/bep20-usdt-blockchain.services';
+import { TechcombankService } from './techcombank.services';
 
 export class GateFactory {
   create(
@@ -50,6 +51,14 @@ export class GateFactory {
           proxies,
         );
         return vcbbank;
+      case GateType.TECHCOMBANK:
+        const techcombank = new TechcombankService(
+          config,
+          eventEmitter,
+          captchaSolver,
+          proxies,
+        );
+        return techcombank;
       case GateType.TRON_USDT_BLOCKCHAIN:
         const tronUsdtBlockchain = new TronUsdtBlockchainService(
           config,

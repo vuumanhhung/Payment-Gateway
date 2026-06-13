@@ -171,6 +171,10 @@ export class GatesManagerService implements OnApplicationBootstrap {
       [GateType.ACBBANK]: { bankId: '970416', bankName: 'ACB' },
       [GateType.TPBANK]: { bankId: '970423', bankName: 'TPBank' },
       [GateType.VCBBANK]: { bankId: '970436', bankName: 'Vietcombank' },
+      [GateType.TECHCOMBANK]: {
+        bankId: '970407',
+        bankName: 'Techcombank',
+      },
     };
 
     return this.gates

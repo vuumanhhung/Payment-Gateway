@@ -103,8 +103,8 @@ export class AdminController {
       name: string;
       type: GateType;
       enabled?: boolean;
-      loginId: string;
-      password: string;
+      loginId?: string;
+      password?: string;
       account: string;
       accountName?: string;
       bankId?: string;

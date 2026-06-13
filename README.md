@@ -18,7 +18,7 @@ dashboard, webhook, Telegram hoặc Discord.
 - Đối chiếu theo tài khoản nhận, số tiền, nội dung và thời điểm giao dịch.
 - Đăng nhập sẵn các gateway khi khởi động nhưng chưa lấy lịch sử.
 - Admin dashboard tại secret URL được sinh tự động.
-- Thêm, sửa, bật hoặc tắt ACB, MB Bank, TPBank và Vietcombank từ dashboard.
+- Thêm, sửa, bật hoặc tắt ACB, MB Bank, TPBank, Vietcombank và Techcombank từ dashboard.
 - Xem trạng thái gateway và lịch sử giao dịch đã ghi nhận.
 - API lấy giao dịch và API tạo/xác minh yêu cầu thanh toán.
 - Gửi webhook và thông báo Telegram/Discord qua BullMQ.
@@ -34,10 +34,11 @@ dashboard, webhook, Telegram hoặc Discord.
 | ACB         | Playwright + captcha | HTTP session | SafeKey khi xác thực thiết bị mới     |
 | TPBank      | API                  | API          | `device_id` đã được xác thực          |
 | Vietcombank | API mã hóa           | API mã hóa   | `device_id` và `user_agent` phải khớp |
+| Techcombank | Playwright session   | API web      | Đăng nhập/duyệt mobile trong browser  |
 | TRON USDT   | Không cần đăng nhập  | TronGrid     | Địa chỉ ví TRC20                      |
 | BEP20 USDT  | API key              | Etherscan V2 | Địa chỉ ví và Etherscan API key       |
 
-Admin dashboard chỉ quản lý bốn gateway ngân hàng. Gateway USDT được cấu hình
+Admin dashboard chỉ quản lý năm gateway ngân hàng. Gateway USDT được cấu hình
 trực tiếp trong `config/config.yml`.
 
 Gateway USDT không xuất hiện trong danh sách tài khoản VietQR. Với implementation
@@ -121,6 +122,7 @@ REDIS_PORT=6380
 CAPTCHA_API_BASE_URL=http://localhost:1234
 GATEWAY_AUTO_CRON=false
 GATEWAY_PRELOGIN=true
+TECHCOMBANK_HEADLESS=false
 PAYMENT_CHECK_TIMEOUT_SEC=30
 PAYMENT_CHECK_INTERVAL_SEC=15
 PAYMENT_CHECK_MAX_ATTEMPTS=2
@@ -259,8 +261,8 @@ gateways: {}
 | ----------------------------- | ----------------------- | ----------------------------------------------------- |
 | `type`                        | Có                      | Loại gateway.                                         |
 | `enabled`                     | Không                   | `false` để không khởi tạo gateway. Mặc định `true`.   |
-| `login_id`                    | Gateway ngân hàng       | Tên đăng nhập Internet Banking.                       |
-| `password`                    | Gateway ngân hàng/BEP20 | Mật khẩu ngân hàng hoặc Etherscan API key với BEP20.  |
+| `login_id`                    | MB/ACB/TPBank/VCB       | Tên đăng nhập Internet Banking.                       |
+| `password`                    | MB/ACB/TPBank/VCB/BEP20 | Mật khẩu ngân hàng hoặc Etherscan API key với BEP20.  |
 | `account`                     | Có                      | Số tài khoản nhận hoặc địa chỉ ví.                    |
 | `account_name`                | Không                   | Tên chủ tài khoản hiển thị trên trang và VietQR.      |
 | `bank_id`                     | Không                   | BIN dùng tạo VietQR.                                  |
@@ -279,6 +281,7 @@ BIN mặc định trên admin:
 | ACB         | `970416` |
 | TPBank      | `970423` |
 | Vietcombank | `970436` |
+| Techcombank | `970407` |
 
 ### MB Bank
 
@@ -424,6 +427,43 @@ frontend, cần kiểm tra lại bundle của trang.
 Lỗi `20231` thường có nghĩa trình duyệt chưa được VCB xác thực, chưa được lưu,
 hoặc `device_id` không khớp `user_agent`.
 
+### Techcombank
+
+```yml
+gateways:
+  techcombank_1:
+    type: 'TECHCOMBANK'
+    enabled: true
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN'
+    bank_id: '970407'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+    get_transaction_count_limit: 100
+```
+
+Techcombank dùng browser session riêng tại:
+
+```text
+.browser-data/techcombank-<tên_gateway>
+```
+
+Lần đầu chạy, service mở Chromium tới Techcombank Online Banking. Đăng nhập và
+xác nhận yêu cầu truy cập trên Techcombank Mobile, sau đó giữ service chạy. Khi
+đã có session, service lấy lịch sử qua API web của Techcombank và map giao dịch
+`CRDT` về tài khoản cấu hình.
+
+Biến môi trường liên quan:
+
+```dotenv
+TECHCOMBANK_HEADLESS=false
+# TECHCOMBANK_LOGIN_TIMEOUT_MS=300000
+```
+
+Khi deploy VPS không có màn hình, cần đăng nhập qua VNC/remote browser hoặc chạy
+headful một lần để tạo `.browser-data/techcombank-<tên_gateway>`. Chỉ bật
+`TECHCOMBANK_HEADLESS=true` khi profile đó đã được xác thực và còn phiên hợp lệ.
+
 ### TRON USDT
 
 ```yml
@@ -520,6 +560,8 @@ Dashboard hỗ trợ:
 - Thêm, sửa, bật hoặc tắt gateway ngân hàng.
 - Nhập `device_id` cho TPBank/VCB.
 - Nhập `user_agent` khi thêm hoặc sửa VCB.
+- Techcombank không bắt nhập `device_id`; lần đầu cần hoàn tất đăng nhập trong
+  browser được service mở.
 - Tìm kiếm và lọc tối đa 500 giao dịch gần nhất.
 
 Session admin có hiệu lực 8 giờ. Sau năm lần nhập sai, IP bị chặn đăng nhập 15
@@ -572,7 +614,7 @@ Khi Payment Gateway chạy bằng `pnpm`:
 
 ```bash
 node -e "
-const http = require('http');
+  const http = require('http');
 
 http.createServer((req, res) => {
   let body = '';
@@ -865,6 +907,18 @@ Kiểm tra:
 - `device_id` được lấy ngay trên trang VCB.
 - `user_agent` trong config giống User-Agent lúc xác thực.
 - Không đổi profile hoặc chế độ chống fingerprint sau khi lấy ID.
+
+### Techcombank chưa lấy được lịch sử
+
+Kiểm tra:
+
+- Cửa sổ Chromium của service đã đăng nhập Techcombank và được duyệt trên
+  Techcombank Mobile.
+- Gateway đang dùng đúng `account` với tài khoản nhận trong Techcombank.
+- Nếu chạy headless, profile `.browser-data/techcombank-<tên_gateway>` đã được
+  xác thực trước đó.
+- Nếu session hết hạn, chạy lại với `TECHCOMBANK_HEADLESS=false` để đăng nhập
+  lại.
 
 ### Không thấy giao dịch
 

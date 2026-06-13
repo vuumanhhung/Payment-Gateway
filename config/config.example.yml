@@ -86,6 +86,15 @@ gateways:
     repeat_interval_in_sec: 10
     get_transaction_day_limit: 14
     get_transaction_count_limit: 100
+  techcombank_1:
+    type: 'TECHCOMBANK'
+    enabled: true
+    account: 'SO_TAI_KHOAN'
+    account_name: 'TEN CHU TAI KHOAN KHONG DAU'
+    bank_id: '970407'
+    repeat_interval_in_sec: 10
+    get_transaction_day_limit: 14
+    get_transaction_count_limit: 100
   tron_usdt_1:
     type: 'TRON_USDT_BLOCKCHAIN'
     account: 'DIA_CHI_VI'
