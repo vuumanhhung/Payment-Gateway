@@ -89,6 +89,8 @@ gateways:
   techcombank_1:
     type: 'TECHCOMBANK'
     enabled: true
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU_DANG_NHAP'
     account: 'SO_TAI_KHOAN'
     account_name: 'TEN CHU TAI KHOAN KHONG DAU'
     bank_id: '970407'

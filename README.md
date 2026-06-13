@@ -257,21 +257,21 @@ gateways: {}
 
 ### Thuộc tính gateway
 
-| Field                         | Bắt buộc                | Ý nghĩa                                               |
-| ----------------------------- | ----------------------- | ----------------------------------------------------- |
-| `type`                        | Có                      | Loại gateway.                                         |
-| `enabled`                     | Không                   | `false` để không khởi tạo gateway. Mặc định `true`.   |
-| `login_id`                    | MB/ACB/TPBank/VCB       | Tên đăng nhập Internet Banking.                       |
-| `password`                    | MB/ACB/TPBank/VCB/BEP20 | Mật khẩu ngân hàng hoặc Etherscan API key với BEP20.  |
-| `account`                     | Có                      | Số tài khoản nhận hoặc địa chỉ ví.                    |
-| `account_name`                | Không                   | Tên chủ tài khoản hiển thị trên trang và VietQR.      |
-| `bank_id`                     | Không                   | BIN dùng tạo VietQR.                                  |
-| `device_id`                   | TPBank, VCB             | ID trình duyệt/thiết bị đã xác thực.                  |
-| `user_agent`                  | Khuyến nghị với VCB     | Phải khớp User-Agent khi lấy và xác thực `device_id`. |
-| `proxy`                       | Không                   | Tên proxy trong khối `proxies`.                       |
-| `repeat_interval_in_sec`      | Có                      | Chu kỳ polling, từ 1 đến 120 giây.                    |
-| `get_transaction_day_limit`   | Không                   | Số ngày lịch sử, mặc định 14.                         |
-| `get_transaction_count_limit` | Không                   | Số bản ghi tối đa, mặc định 100.                      |
+| Field                         | Bắt buộc                | Ý nghĩa                                                                                              |
+| ----------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `type`                        | Có                      | Loại gateway.                                                                                        |
+| `enabled`                     | Không                   | `false` để không khởi tạo gateway. Mặc định `true`.                                                  |
+| `login_id`                    | MB/ACB/TPBank/VCB       | Tên đăng nhập Internet Banking. Nên nhập với Techcombank khi chạy VPS/headless.                      |
+| `password`                    | MB/ACB/TPBank/VCB/BEP20 | Mật khẩu ngân hàng hoặc Etherscan API key với BEP20. Nên nhập với Techcombank khi chạy VPS/headless. |
+| `account`                     | Có                      | Số tài khoản nhận hoặc địa chỉ ví.                                                                   |
+| `account_name`                | Không                   | Tên chủ tài khoản hiển thị trên trang và VietQR.                                                     |
+| `bank_id`                     | Không                   | BIN dùng tạo VietQR.                                                                                 |
+| `device_id`                   | TPBank, VCB             | ID trình duyệt/thiết bị đã xác thực.                                                                 |
+| `user_agent`                  | Khuyến nghị với VCB     | Phải khớp User-Agent khi lấy và xác thực `device_id`.                                                |
+| `proxy`                       | Không                   | Tên proxy trong khối `proxies`.                                                                      |
+| `repeat_interval_in_sec`      | Có                      | Chu kỳ polling, từ 1 đến 120 giây.                                                                   |
+| `get_transaction_day_limit`   | Không                   | Số ngày lịch sử, mặc định 14.                                                                        |
+| `get_transaction_count_limit` | Không                   | Số bản ghi tối đa, mặc định 100.                                                                     |
 
 BIN mặc định trên admin:
 
@@ -434,6 +434,8 @@ gateways:
   techcombank_1:
     type: 'TECHCOMBANK'
     enabled: true
+    login_id: 'TEN_DANG_NHAP'
+    password: 'MAT_KHAU'
     account: 'SO_TAI_KHOAN'
     account_name: 'TEN CHU TAI KHOAN'
     bank_id: '970407'
@@ -448,10 +450,13 @@ Techcombank dùng browser session riêng tại:
 .browser-data/techcombank-<tên_gateway>
 ```
 
-Lần đầu chạy, service mở Chromium tới Techcombank Online Banking. Đăng nhập và
-xác nhận yêu cầu truy cập trên Techcombank Mobile, sau đó giữ service chạy. Khi
-đã có session, service lấy lịch sử qua API web của Techcombank và map giao dịch
-`CRDT` về tài khoản cấu hình.
+Khi có `login_id` và `password`, service tự mở luồng đăng nhập Techcombank trong
+Playwright, tự điền thông tin đăng nhập, rồi đứng chờ bạn duyệt yêu cầu trên
+Techcombank Mobile. Sau khi có session, service lấy lịch sử qua API web của
+Techcombank và map giao dịch `CRDT` về tài khoản cấu hình.
+
+Nếu chạy local có GUI và không muốn lưu mật khẩu trong config, có thể bỏ trống
+`login_id/password`; service sẽ mở Chromium để bạn tự nhập lần đầu.
 
 Biến môi trường liên quan:
 
@@ -460,9 +465,15 @@ TECHCOMBANK_HEADLESS=false
 # TECHCOMBANK_LOGIN_TIMEOUT_MS=300000
 ```
 
-Khi deploy VPS không có màn hình, cần đăng nhập qua VNC/remote browser hoặc chạy
-headful một lần để tạo `.browser-data/techcombank-<tên_gateway>`. Chỉ bật
-`TECHCOMBANK_HEADLESS=true` khi profile đó đã được xác thực và còn phiên hợp lệ.
+Khi deploy VPS không có màn hình:
+
+1. Điền `login_id` và `password` cho gateway Techcombank.
+2. Đặt `TECHCOMBANK_HEADLESS=true`.
+3. Khởi động service và mở app Techcombank Mobile để duyệt yêu cầu đăng nhập.
+4. Chờ log `TechcombankService login success`.
+
+Nếu ngân hàng đổi luồng đăng nhập hoặc chặn headless browser, fallback thực tế là
+chạy một phiên headful qua VNC/Xvfb để tạo lại `.browser-data/techcombank-<tên_gateway>`.
 
 ### TRON USDT
 
@@ -560,8 +571,8 @@ Dashboard hỗ trợ:
 - Thêm, sửa, bật hoặc tắt gateway ngân hàng.
 - Nhập `device_id` cho TPBank/VCB.
 - Nhập `user_agent` khi thêm hoặc sửa VCB.
-- Techcombank không bắt nhập `device_id`; lần đầu cần hoàn tất đăng nhập trong
-  browser được service mở.
+- Techcombank không bắt nhập `device_id`; nếu nhập `login_id/password`, service
+  tự đăng nhập và chờ duyệt trên Techcombank Mobile.
 - Tìm kiếm và lọc tối đa 500 giao dịch gần nhất.
 
 Session admin có hiệu lực 8 giờ. Sau năm lần nhập sai, IP bị chặn đăng nhập 15
@@ -914,11 +925,12 @@ Kiểm tra:
 
 - Cửa sổ Chromium của service đã đăng nhập Techcombank và được duyệt trên
   Techcombank Mobile.
+- Nếu chạy VPS/headless, `login_id/password` đã được cấu hình đúng.
 - Gateway đang dùng đúng `account` với tài khoản nhận trong Techcombank.
-- Nếu chạy headless, profile `.browser-data/techcombank-<tên_gateway>` đã được
-  xác thực trước đó.
-- Nếu session hết hạn, chạy lại với `TECHCOMBANK_HEADLESS=false` để đăng nhập
-  lại.
+- Nếu chạy headless, `TECHCOMBANK_LOGIN_TIMEOUT_MS` đủ dài để bạn kịp duyệt trên
+  mobile.
+- Nếu session hết hạn, service sẽ tự đăng nhập lại khi có `login_id/password`;
+  hãy mở Techcombank Mobile để duyệt yêu cầu mới.
 
 ### Không thấy giao dịch
 

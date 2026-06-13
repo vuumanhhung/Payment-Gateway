@@ -370,8 +370,8 @@ function updateBankFields(setDefaultBankId = true) {
   loginInput.required = requiresCredentials && !editingBankName;
   passwordInput.required = requiresCredentials && !editingBankName;
   if (type === 'TECHCOMBANK') {
-    loginInput.placeholder = 'Không bắt buộc, đăng nhập trong browser';
-    passwordInput.placeholder = 'Không bắt buộc, đăng nhập trong browser';
+    loginInput.placeholder = 'Nên nhập nếu chạy VPS/headless';
+    passwordInput.placeholder = 'Nên nhập nếu chạy VPS/headless';
   } else if (!editingBankName) {
     loginInput.placeholder = '';
     passwordInput.placeholder = '';

@@ -96,11 +96,37 @@ export class TechcombankService extends Gate {
       timeout: 60000,
     });
 
+    if (await this.hasAccessToken()) {
+      console.log('TechcombankService login success');
+      return;
+    }
+
+    if (await this.isLoginFormVisible()) {
+      if (this.hasLoginCredentials()) {
+        await this.submitLoginForm();
+        console.log(
+          'TechcombankService submitted login, approve the request in Techcombank Mobile...',
+        );
+      } else {
+        if (this.isHeadless()) {
+          throw new Error(
+            'Techcombank headless login requires login_id and password in config.yml',
+          );
+        }
+
+        console.log(
+          'Complete Techcombank login in the opened Chromium window, then approve in Techcombank Mobile...',
+        );
+      }
+    }
+
     try {
-      await this.waitForAccessToken(this.getLoginTimeoutMs());
-    } catch {
+      await this.waitForLoginCompletion(this.getLoginTimeoutMs());
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown login error';
       throw new Error(
-        `Techcombank login requires a browser session. Complete login and mobile approval in the opened Chromium window, then keep the service running. Browser data: ${this.getBrowserDataDir()}`,
+        `Techcombank login failed: ${message}. Browser data: ${this.getBrowserDataDir()}`,
       );
     }
 
@@ -149,7 +175,7 @@ export class TechcombankService extends Gate {
   private getLoginTimeoutMs() {
     const value = Number(process.env.TECHCOMBANK_LOGIN_TIMEOUT_MS);
     if (Number.isFinite(value) && value > 0) return value;
-    return this.isHeadless() ? 30000 : 5 * 60 * 1000;
+    return 5 * 60 * 1000;
   }
 
   private async waitForAccessToken(timeout: number) {
@@ -166,6 +192,78 @@ export class TechcombankService extends Gate {
     return page
       .evaluate(() => Boolean(window.sessionStorage.getItem('access_token')))
       .catch(() => false);
+  }
+
+  private hasLoginCredentials() {
+    return Boolean(this.config.login_id?.trim() && this.config.password);
+  }
+
+  private async isLoginFormVisible() {
+    const page = await this.ensurePage();
+    return page
+      .locator('#username, input[name="username"]')
+      .first()
+      .isVisible({ timeout: 1000 })
+      .catch(() => false);
+  }
+
+  private async submitLoginForm() {
+    const page = await this.ensurePage();
+    await page
+      .locator('#username, input[name="username"]')
+      .first()
+      .fill(this.config.login_id.trim());
+    await page
+      .locator('#password, input[name="password"]')
+      .first()
+      .fill(this.config.password);
+    await page.locator('#kc-login, input[name="login"]').first().click();
+    await page
+      .waitForLoadState('domcontentloaded', { timeout: 10000 })
+      .catch(() => undefined);
+  }
+
+  private async waitForLoginCompletion(timeout: number) {
+    const page = await this.ensurePage();
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+      if (await this.hasAccessToken()) return;
+
+      const text = await page
+        .locator('body')
+        .innerText({ timeout: 1000 })
+        .catch(() => '');
+      const loginError = this.extractLoginError(text);
+      if (loginError) {
+        throw new Error(loginError);
+      }
+
+      await page.waitForTimeout(1000);
+    }
+
+    throw new Error(
+      'Timed out waiting for Techcombank Mobile approval or browser session token',
+    );
+  }
+
+  private extractLoginError(text: string) {
+    const patterns = [
+      'không đúng',
+      'không hợp lệ',
+      'bị khóa',
+      'tạm khóa',
+      'hết hạn',
+      'invalid',
+      'incorrect',
+    ];
+
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) =>
+        patterns.some((pattern) => line.toLowerCase().includes(pattern)),
+      );
   }
 
   private async refreshSession() {
