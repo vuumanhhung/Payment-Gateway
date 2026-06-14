@@ -91,6 +91,20 @@ webhook mà không cần thao tác trên trang thanh toán.
 
 ## Cài đặt local
 
+### Listen port trước khi thực hiện:
+```bash
+const http=require('http');
+http.createServer((req,res)=>{
+ let body='';
+ req.on('data',d=>body+=d);
+ req.on('end',()=>{
+   console.log('WEBHOOK:', body);
+   res.writeHead(200);
+   res.end('OK');
+ });
+}).listen(4000,()=>console.log('Listening on port 4000'));
+"
+```
 ### 1. Cài pnpm
 
 ```bash
