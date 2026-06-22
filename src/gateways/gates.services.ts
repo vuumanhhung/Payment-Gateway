@@ -13,7 +13,7 @@ import { ProxyConfig } from '../proxy/proxy.interfaces';
 
 @Injectable()
 export abstract class Gate {
-  private isCronRunning = process.env.GATEWAY_AUTO_CRON === 'true';
+  private isCronRunning = false;
   private isCronLoopStarted = false;
   private isDisposed = false;
   private logger = new Logger(Gate.name);
@@ -23,11 +23,7 @@ export abstract class Gate {
     protected readonly eventEmitter: EventEmitter2,
     protected readonly captchaSolver: CaptchaSolverService,
     protected readonly proxyService: ProxyService,
-  ) {
-    if (this.isCronRunning) {
-      void this.cron();
-    }
-  }
+  ) {}
 
   abstract getHistory(): Promise<Payment[]>;
   getName() {

@@ -1,0 +1,9 @@
+pay.example.com {
+	@scan {
+		method POST
+		path /gateways/scan
+	}
+
+	reverse_proxy @scan 127.0.0.1:3001
+	respond 404
+}

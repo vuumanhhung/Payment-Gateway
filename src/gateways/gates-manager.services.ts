@@ -53,6 +53,10 @@ export class GatesManagerService implements OnApplicationBootstrap {
     if (this.configService.get('GATEWAY_PRELOGIN') === 'true') {
       await this.warmUpGates();
     }
+
+    if (this.configService.get('GATEWAY_AUTO_CRON') === 'true') {
+      this.startAllCron();
+    }
   }
 
   createGates(banksConfig: GateConfig[]) {
@@ -161,7 +165,13 @@ export class GatesManagerService implements OnApplicationBootstrap {
     this.setGateStatus(config.name, 'idle');
 
     if (this.configService.get('GATEWAY_PRELOGIN') === 'true') {
-      void this.warmUpGate(gate);
+      void this.warmUpGate(gate).finally(() => {
+        if (this.configService.get('GATEWAY_AUTO_CRON') === 'true') {
+          gate.startCron();
+        }
+      });
+    } else if (this.configService.get('GATEWAY_AUTO_CRON') === 'true') {
+      gate.startCron();
     }
   }
 

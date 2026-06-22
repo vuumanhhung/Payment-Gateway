@@ -37,6 +37,7 @@ import { AdminModule } from './admin/admin.module';
         PAYMENT_CHECK_TIMEOUT_SEC: Joi.number().min(1).max(300).default(30),
         PAYMENT_CHECK_INTERVAL_SEC: Joi.number().min(1).max(30).default(15),
         PAYMENT_CHECK_MAX_ATTEMPTS: Joi.number().min(1).max(10).default(2),
+        GATEWAY_API_TOKEN: Joi.string().min(32).required(),
         ADMIN_DATA_PATH: Joi.string().optional(),
       }),
     }),

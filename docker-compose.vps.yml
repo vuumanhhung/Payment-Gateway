@@ -1,0 +1,51 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${GATEWAY_ENV_FILE:-.env.vps}
+    environment:
+      PORT: "3001"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CAPTCHA_API_BASE_URL: http://captcha-resolver:1234
+      GATEWAY_AUTO_CRON: "false"
+      GATEWAY_PRELOGIN: "false"
+      ACB_MANUAL_LOGIN: "false"
+      ACB_SAFEKEY_CONSOLE: "true"
+      DISABLE_SYNC_REDIS: "true"
+    volumes:
+      - ./config/config.yml:/app/config/config.yml
+      - ./.browser-data:/app/.browser-data
+      - ./.admin-data:/app/.admin-data
+    ports:
+      - "127.0.0.1:3001:3001"
+    stdin_open: true
+    tty: true
+    shm_size: "1gb"
+    depends_on:
+      redis:
+        condition: service_healthy
+      captcha-resolver:
+        condition: service_started
+
+  redis:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  captcha-resolver:
+    image: registry.gitlab.com/nhayhoc/bank-captcha-server
+    restart: unless-stopped
+
+volumes:
+  redis-data:

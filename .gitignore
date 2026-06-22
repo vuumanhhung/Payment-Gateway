@@ -3,6 +3,7 @@
 /node_modules
 /.browser-data
 /.admin-data
+.env
 
 # Logs
 logs
@@ -38,4 +39,5 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 config/config.yml
+.env.vps
 package-lock.json
